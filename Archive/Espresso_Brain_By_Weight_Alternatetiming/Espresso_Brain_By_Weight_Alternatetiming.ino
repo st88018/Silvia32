@@ -1,453 +1,613 @@
-//FYI I used this hx711 library 
-//     URL: https://github.com/RobTillaart/HX711
+// OLED control library
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SH110X.h>
+
+// Arduino flash memory control library
+// This is being used to store the target weight so when arduino power cycles it retains last used weight
+#include <EEPROM.h>
+
+// this is the little board that comes with each load cell
+// URL: https://github.com/RobTillaart/HX711
+#include "HX711.h"
 
 
-//Screen Stuff
-#include <Adafruit_SSD1306.h>
-//#include <splash.h>
+// OLED-screen setup
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
-#define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+// Reset pin # (or -1 if sharing Arduino reset pin)
+#define OLED_RESET -1   //   QT-PY / XIAO
+Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-#include <EEPROM.h> //This is being used to store the target weight so when arduino power cycles it retains last used weight
-
-//this is the little board that comes with each load cell
-#include "HX711.h"
+// Scale setup
 HX711 scale;
 HX711 scale2;
-
-// pins for the first load cell
 uint8_t dataPin = 5;
 uint8_t clockPin = 6;
-
-// pins for the second load cell
 uint8_t dataPin2 = 11;
 uint8_t clockPin2 = 12;
+// This is the calibration value for each load cell, you need to calibrate
+// them with a known weight The good thing is that the value is linear so if
+// you know something weights 100g you can calculate what the value should be.
+#define scaleCalibration 2040.54
+#define scaleCalibration2 1986.60
 
-//the variable to hold a value for each load cell (float because it is a decimal)
+
+
+// the variable to hold a value for each load cell (float because it is a decimal)
 float w1;
 float w2;
 
-//Obviously we use this stuff for weight
-float currentWeight;
-float lastWeight;
+// Weight control variables
+int currentWeight;
+int lastWeight;
 bool weightReached = false;
-float targetWeight;
-float weightOffset = 1.2; // This value is how many grams before the target should the pump shut off, you need to test
+int targetWeight;
+int weightOffset = 0; // This value is how many decigrams before the target should the pump shut off, you need to test
 
-//This stuff is all related to timing
-const unsigned long eventInterval = 100; 
-const unsigned long reachedInterval = 3000; // how long to keep reading and updating the weight after the target weight is reached (btw 1000 = 1s)
+
+/*
+   Macros and globals needed for the offset hashtable based on flowrate
+*/
+// The interval over which the flow is calculated
+#define flowTime 4
+// Maximum flowrate to remember offset for, in centigrams per second
+#define maxFlow 500
+// Flow rate bucketsize in centigrams per second
+#define flowInterval 20
+// starting postion in EEPROM to write the offset hashtable
+#define hashOffset 10
+// Delta in offsets to warrant a new write to EEPROM in centigrams
+#define offsetPrecision 50
+
+int hashMax = maxFlow / flowInterval;
+int hashStep = flowInterval;
+int weightFlow[flowTime] = {0};
+
+// Flow of coffee measured as centigram per flowTime - 1
+int currentFlow;
+int lastFlow;
+
+
+
+// Timing control variables
+const unsigned long eventInterval = 100;
+const unsigned long reachedInterval = 5000; // DEPRECATED: (will be changed into flowrate) how long to keep reading and updating the weight after the target weight is reached in milliseconds
 unsigned long previousTime = 0;
-unsigned long startCounting; 
-float elapsedTime;
+unsigned long startCounting;
 unsigned long currentTime;
-float tV = 0.0;
+unsigned int currentSecond = 0;
+// NOTE: tV is interchangeable with elapsedTime; why do both exist?
+unsigned long elapsedTime;
+unsigned long tV = 0;
 
-//This is the weight that arduino will default to when powered on
+// This is the weight that arduino will default to when powered on
 int storedWeight;
 
 
-//This is rudamentary state logic
+// This is rudimentary state logic
 bool started = false;
 bool preStarted = false;
 
 
-//-------------- the rotary encoder  //--------------
+// The rotary encoder
 int buttonPin = 4;
 int buttonPinState = 1;
 int buttonPinLast = 1;
 bool buttonPressed = 0;
-int pinA =3; 
-int pinB = 2;
+int pinA = 2;
+int pinB = 3;
 int pinAStateCurrent = HIGH;
 int pinAStateLast = pinAStateCurrent;
-bool turnDetected = false;
 
 
-//-------------- The Relays //--------------
-int threeWay = 9;
-int pump = 10;
+// The Relays
+int pump = 47;
+int valve = 48;
 
-//Helper functions that turn the relays on and off 
-void extractOn(){
+// Helper functions that turn the relays on and off
+void extractOn() {
   digitalWrite(pump, HIGH);
-  digitalWrite(threeWay, HIGH);
-  }
+  digitalWrite(valve, HIGH);
+}
 
-void extractOff(){
+void extractOff() {
   digitalWrite(pump, LOW);
-  digitalWrite(threeWay, LOW);
-  }
+  digitalWrite(valve, LOW);
+}
 
 
 
-//-------------- These are the different layouts for each screen that we will use, helps keep our code more readable to break them out like this//-------------- 
+/***
+   These are the different layouts for each screen that we will use,
+   helps keep our code more readable to break them out like this
+ ***/
 
-
-//When you first turn the machine on
-void preStartedDisplay(){
-  display.setTextSize(1);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(0, 0);   
+/*
+   When you first turn the machine on
+*/
+void preStartedDisplay() {
+  display.setTextSize(1);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(0, 0);
   display.print("Target Weight");
-  display.setTextSize(3);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(0, 14);   
-  display.print(targetWeight, 1);
+  display.setTextSize(2);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(0, 14);
+  display.print(targetWeight * 0.01, 1);
+  display.print(" g");
 
 
-//if you've pulled a shot already put the info on screen (if TV isnt 0 you've pulled a shot)  
-  if (tV !=0){   
+
+  // if you've pulled a shot already put the info on screen (if TV isnt 0 you've pulled a shot)
+  if (tV != 0) {
     display.setTextSize(1); // this is size..  1 is 8 pixels tall, 2 is 16, and so on
-    display.setTextColor(SSD1306_WHITE); // Draw white text
-    display.setCursor(0, 44); // this is position in (x,y)
-    display.print("Previous Weight"); //display.print sends this to buffer
-    display.setTextSize(1);     
-    display.setTextColor(SSD1306_WHITE); // Draw white text
-    display.setCursor(98, 44);   
-    display.print(lastWeight, 1);
-    display.setTextSize(1);     
-    display.setTextColor(SSD1306_WHITE); // Draw white text
+    display.setTextColor(SH110X_WHITE); // Draw white text
+    display.setCursor(0, 32); // this is position in (x,y)
+    display.print("Prev Weight"); //display.print sends this to buffer
+    display.setTextSize(1);
+    display.setTextColor(SH110X_WHITE); // Draw white text
+    display.setCursor(82, 32);
+    display.print(lastWeight * 0.01, 1);
+    display.print(" g");
+    display.setTextSize(1); 
+    display.setTextColor(SH110X_WHITE); // Draw white text
+    display.setCursor(0, 44); 
+    display.print("Prev Flow"); 
+    display.setTextSize(1);
+    display.setTextColor(SH110X_WHITE); // Draw white text
+    display.setCursor(82, 44);
+    display.print(lastFlow * 0.01, 1);
+    display.print(" g/s");
+    display.setTextSize(1);
+    display.setTextColor(SH110X_WHITE); // Draw white text
     display.setCursor(0, 56);
-    display.print("Previous Time");
-    display.setTextSize(1);     
-    display.setTextColor(SSD1306_WHITE); // Draw white text
-    display.setCursor(98, 56);   
-    display.print(tV, 1);
+    display.print("Prev Time");
+    display.setTextSize(1);
+    display.setTextColor(SH110X_WHITE); // Draw white text
+    display.setCursor(82, 56);
+    display.print(tV / 1000.0, 1);
+    display.print(" s");
   }
 }
 
-//-------------- when the shot is being pulled this is what is shown
-void startedDisplay(){
+/*
+   When the shot is being pulled this is what is shown
+*/
+void startedDisplay() {
 
-  display.setTextSize(1);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(0, 0);   
+  display.setTextSize(1);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(0, 0);
   display.print("Target Weight");
-  display.setTextSize(1);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(85, 0);   
-  display.print(targetWeight, 1);
-  display.setTextSize(2);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(0,22);   
+  display.setTextSize(1);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(85, 0);
+  display.print(targetWeight * 0.01, 1);
+  display.print(" g");
+  display.setTextSize(2);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(0, 22);
   display.print("Weight");
-  display.setTextSize(2);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(80,22);   
-  display.print(currentWeight, 1);
-  display.setTextSize(2);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(0, 46);   
+  display.setTextSize(1);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(80, 22);
+  display.print(currentWeight * 0.01, 1);
+  display.print(" g");
+  display.setTextSize(1);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(80, 34);
+  display.print(currentFlow * 0.01, 1);
+  display.print(" g/s");
+  display.setTextSize(2);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(0, 46);
   display.print("Time");
-  display.setTextSize(2);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(80, 46);   
-  display.print(tV,1);
+  display.setTextSize(2);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(80, 46);
+  display.print(tV / 1000.0, 1);
+  display.print(" s");
+}
 
-
-  }
-
-//-------------- This is identical to when a shot is pulled only we switch to a more precise method of reading the scale (called lastWeight)
-
-void justEndedDisplay(){
-  display.setTextSize(1);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(0, 0);   
+/*
+   This is identical to when a shot is pulled only we switch to a more precise method of reading the scale (called lastWeight)
+   NOTE: This can be merged somehow with startedDisplay()
+*/
+void justEndedDisplay() {
+  display.setTextSize(1);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(0, 0);
   display.print("Target Weight");
-  display.setTextSize(1);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(85, 0);   
-  display.print(targetWeight, 1);
-  display.setTextSize(2);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(0,22);   
+  display.setTextSize(1);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(85, 0);
+  display.print(targetWeight * 0.01, 1);
+  display.print(" g");
+  display.setTextSize(2);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(0, 22);
   display.print("Weight");
-  display.setTextSize(2);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(80,22);   
-  display.print(lastWeight, 1);
-  display.setTextSize(2);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(0, 46);   
+  display.setTextSize(1);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(80, 22);
+  display.print(lastWeight * 0.01, 1);
+  display.print(" g");
+  display.setTextSize(1);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(80, 34);
+  display.print(lastFlow * 0.01, 1);
+  display.print(" g/s");
+  display.setTextSize(2);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(0, 46);
   display.print("Time");
-  display.setTextSize(2);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(80, 46);   
-  display.print(tV,1);
+  display.setTextSize(2);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(80, 46);
+  display.print(tV / 1000.0, 1);
+  display.print(" s");
 
-  }
-
-
-//-------------- This is just that text "starting" that appears after you click the encoder but before the pump is on.
+}
 
 
-void startingDisplay(){
+/*
+   This is just that text "starting" that appears after you click the encoder but before the pump is on.
+*/
+void startingDisplay() {
   display.clearDisplay();
-  display.setTextSize(2);     
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(15,18);   
+  display.setTextSize(2);
+  display.setTextColor(SH110X_WHITE); // Draw white text
+  display.setCursor(15, 18);
   display.print("Starting");
   display.display();
-  }
+}
 
 
-//-------------- This function adds or subtracts .1 to the target weight if you turn left or right
-void increment(){
-    turnDetected = true;
-    //Rotation
-    pinAStateCurrent = digitalRead(pinA);
-    if((pinAStateLast == LOW) && (pinAStateCurrent == HIGH)){
-    if(digitalRead(pinB) == HIGH){
-          Serial.println("decremented");
-          targetWeight -= 0.1;
-        delay(15);
-      }
-    else {
-    targetWeight += 0.1; 
-    delay(15);
+/*
+   This function adds or subtracts .1 to the target weight if you turn left or right
+*/
+void increment() {
+
+  // Rotation
+  pinAStateCurrent = digitalRead(pinA);
+  if ((pinAStateLast == LOW) && (pinAStateCurrent == HIGH)) {
+    if (digitalRead(pinB) == HIGH) {
+      targetWeight -= 100;
+      delay(15);
+    } else {
+      targetWeight += 100;
+      delay(15);
     }
   }
   pinAStateLast = pinAStateCurrent;
 }
 
-//--------------  This function checks to see if the button was pressed
-void buttonDetect(){
-  buttonPinState=digitalRead(buttonPin);
-  if (buttonPinState != buttonPinLast){
-     if ((buttonPinState==1) && (!started)) /*I just started extracting*/{
+/*
+   This function checks to see if the button was pressed
+*/
+void buttonDetect() {
+  buttonPinState = !digitalRead(0);
+
+  if (buttonPinState != buttonPinLast) {
+    // Extraction just started
+    if ((buttonPinState == 1) && (!started)) {
       preStarted = false;
       startingDisplay();
       tareScales();
       delay(250);
-      tV=0;
-      currentWeight=0;
-      elapsedTime=0;
+      tV = 0;
+      currentWeight = 0;
+      lastFlow = 0;
+      elapsedTime = 0;
       preStarted = false;
-      started=true;
+      started = true;
       extractOn();
       startCounting = millis();
       display.clearDisplay();
-      }
-     if ((elapsedTime>1.0) &&(buttonPinState==1) && (started)) /*I want to stop the extraction manually*/{
+    }
+
+    // Manual stop on extraction
+    if ((elapsedTime > 1.0) && (buttonPinState == 1) && (started)) {
       weightReached = true;
-      }
-    buttonPinLast=buttonPinState;
+    }
+    buttonPinLast = buttonPinState;
   }
 }
-//-------------- This is the interupt that we create in our setup, the conditional statement means if you rotate the encoder while a shot is extracting it wont run any code and cause lag
 
-void update(){
-  if(preStarted) {
+
+/*
+   This is the interupt that we create in our setup, the conditional statement means if you rotate the encoder
+   while a shot is extracting it wont run any code and cause lag
+*/
+void update() {
+  if (preStarted) {
     increment();
   }
 }
 
-//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------
-//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------
+// --------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------
+// --------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------
 
-void setup()
-{
-  Serial.begin(9600);
-  
-//display setup
-    if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
+void setup() {
+  Serial.begin(115200);
+  pinMode(1, OUTPUT);
+  digitalWrite(1, HIGH);
+
+  // display setup
+  if (!display.begin(0x3c, true)) { // Address 0x3C for 128x32
     Serial.println(F("SSD1306 allocation failed"));
-    for(;;); // Don't proceed, loop forever
-  
+    for (;;); // Don't proceed, loop forever
+
   }
 
-//This is seeing if this is the first time you are writing to the eeprom and if it is just put a 0 for now
-  if (EEPROM.read(256) != 123){
+  // This is seeing if this is the first time you are writing to the eeprom and if it is just put a 0 for now
+  if (EEPROM.read(256) != 123) {
     EEPROM.write(256, 123);
     storedWeight = 0;
+  }else { // This code runs every time the arduino powers back on... it sets the target weight to the last weight used so that it "remembers"
+    EEPROM.get(0, storedWeight);
   }
 
-//This code runs every time the arduino powers back on... it sets the target weight to the last weight used so that it "remmbers"
-  else {
-    EEPROM.get(0, storedWeight);  
-  }
-//  This is a trick to convert our int back into a float, eeprom floats cant go very high because you only have like a byte so we store the weigth as an int and convert it back 
-  targetWeight = storedWeight*0.1;
+  targetWeight = storedWeight;
 
-//setting up the relays
-   pinMode (pump, OUTPUT);
-   pinMode(threeWay, OUTPUT);
+  // setting up the relays
+  pinMode(pump, OUTPUT);
+  pinMode(valve, OUTPUT);
 
-//making sure the pump and valve are off, probably dont need but just in case   
-   extractOff();
+  // making sure the pump and valve are off, probably dont need but just in case
+  extractOff();
 
-// inital display 
+  // initial display
   display.clearDisplay();
   preStartedDisplay();
   display.display();
 
-//  This is our rotary encoder setup
-  pinMode(buttonPin, INPUT_PULLUP); // initialize the button pin as a input
-  pinMode (pinA, INPUT_PULLUP);
-  pinMode (pinB, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(pinA), update, CHANGE);
+  // // This is our rotary encoder setup
+  // pinMode(buttonPin, INPUT_PULLUP); // initialize the button pin as a input
+  // pinMode(pinA, INPUT_PULLUP);
+  // pinMode(pinB, INPUT_PULLUP);
+  // attachInterrupt(digitalPinToInterrupt(pinA), update, CHANGE);
+  // This is a Testing use of using our WC controller
+  pinMode(7,INPUT);pinMode(0,INPUT);pinMode(6,INPUT);
+  pinMode(0, INPUT);
+  // attachInterrupt(digitalPinToInterrupt(7), upup, FALLING);
+  // attachInterrupt(digitalPinToInterrupt(0), midmid, FALLING);
+  // attachInterrupt(digitalPinToInterrupt(6), downdown, FALLING);
 
 
-//  This initiallizes the scales
-  scale.begin(dataPin, clockPin);
-  scale2.begin(dataPin2, clockPin2);
+  // // This initializes the scales
+  // scale.begin(dataPin, clockPin);
+  // scale2.begin(dataPin2, clockPin2);
 
-//This is the callibration value for each load cell, you need to calibrate 
-//them with a known weight The good thing is that the value is linear so if 
-//you know somethign weights 100g you can calculate what the value should be. 
-  scale.set_scale(1091); 
-  scale2.set_scale(1105);
+  // // Calibrate to initially weighted value
+  // scale.set_scale(scaleCalibration);
+  // scale2.set_scale(scaleCalibration2);
 
-//set the scales to 0
-  scale.tare();
-  scale2.tare();
+  // // set the scales to 0
+  // scale.tare();
+  // scale2.tare();
 
-//Set the state of the system
+  // Set the state of the system
   preStarted = true;
+  Serial.println("Finish setup");
 }
 
-//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------
-//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------
+// --------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------
+// --------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------
 
-void loop(){
+void loop() {
 
-//check to see if extraction is running and perform a get weigth if it is
-    if ((preStarted == false) && (!weightReached)){
-        scaleFunc();
-    }
-// check to see if the shot just ended and switch to doing multiple averaged readings for more accuracy
-    if ((preStarted == false) && (weightReached)){
-        precisionScale();
-    }
-
-
-  currentTime = millis();
-//check if button is pressed and run the button detect code we defined earlier 
-  buttonDetect();
-
-//  ––––––––––––––––––––––––––––––––––––––––
-
-//This is the code that updates the time and weight value while the extraction is happening
-  if(started){
-      if(!weightReached){
-          elapsedTime = ((currentTime - startCounting)*.001);
-          tV = elapsedTime;
-        previousTime = currentTime;
-        display.clearDisplay();
-        startedDisplay();
-        display.display();      
-        }
+  // check to see if extraction is running and perform a get weight if it is
+  if ((preStarted == false) && (!weightReached)) {
+    scaleFunc();
+  }
+  // check to see if the shot just ended and switch to doing multiple averaged readings for more accuracy
+  else if ((preStarted == false) && (weightReached)) {
+    precisionScale();
   }
 
-//  ––––––––––––––––––––––––––––––––––––––––  
+  currentTime = millis();
 
-//This is the code that updates the weight for a few more moments just after the shot has stopped extracting and timer has stopped
-  if (weightReached && started){
+  // check if button is pressed and run the button detect code we defined earlier
+  buttonDetect();
+
+  // Updates the time and weight value while the extraction is happening
+  if (started) {
+    updateWeightFlow();
+    
+    // this is to only start counting extraction time from the first drips into the cup
+    if (currentWeight < 1) {
+      startCounting = currentTime;
+    }
+    
+    if (!weightReached) {
+      elapsedTime = currentTime - startCounting;
+      tV = elapsedTime;
+      previousTime = currentTime;
+      display.clearDisplay();
+      startedDisplay();
+      display.display();
+    }
+  }
+
+  // This is the code to stop the extraction once the target weight is reached.
+  // I added the conditional to only runs 5s after extraction starts because
+  // sometimes you need to reposition your cup and that would trip
+  // the weight and stop extraction and ruin your shot :(
+
+  if (tV > 2000) {
+    readWeightOffset();
+    if ((currentWeight) > (targetWeight - weightOffset)) {
+      lastWeight = currentWeight;
+      if (lastFlow == 0) {
+        lastFlow = currentFlow;
+      }
+      weightReached = true;
+      if (storedWeight != targetWeight) {
+        storedWeight = targetWeight;
+        EEPROM.put(0, storedWeight);
+      }
+    }
+  }
+
+  // Updates the weight for a few more moments just after the shot has stopped extracting and timer has stopped
+  if (weightReached && started) {
     extractOff();
     display.clearDisplay();
     justEndedDisplay();
-    display.display(); 
-  if(currentWeight>lastWeight){
+    display.display();
+    if (currentWeight > lastWeight) {
       lastWeight = currentWeight;
-      }
     }
-  //This is the code that goes back to the inial standby screen when you are finished extracting so you can set another weight
-  if(!started){
+  }
+
+  /* this code runs after your weight is reached AND a certain extra
+     amount of time has passed, you know for the last few drips...
+  */
+  if (weightReached && currentFlow < 10) {
+    started = 0;
+    weightReached = false;
+    preStarted = true;
+    writeWeightOffset();
+    clearWeightFlow();
+    currentWeight = 0;
+  }
+
+  // Goes back to the initial standby screen when you are finished extracting so you can set another weight
+  if (!started) {
     display.clearDisplay();
     preStartedDisplay();
     display.display();
   }
 
-
-//This is the code to stop the extraction once the target weight is reached. 
-//I added the conditional to only runs 5s after extraction starts because 
-//sometimes you need to reposition your cup and that would trip 
-//the weight and stop extraction and ruin your shot :(
-
-  if (tV>5){
-    if ((currentWeight) > (targetWeight-weightOffset)){
-       lastWeight=currentWeight;
-       weightReached = true;
-        if (storedWeight != round(targetWeight/0.1)) {
-          storedWeight= round(targetWeight/0.1); 
-          EEPROM.put(0, storedWeight);
-          }
-    }
-  }
-
-//  this code runs after your weight is reached AND a certain extra 
-//amount of time has passed, you know for the last few drips... 
-//it resets the states so you are ready to brew again... 
-// e.g you can change it to 5s if you update your reached interval value to 5000 at the top.
-    if( currentTime - previousTime >= reachedInterval){
-        started=0;
-        weightReached = false;
-        preStarted = true;
-        currentWeight=0;
-        }
-
-
-//  Post pump shutoff / residual flow compensation (WIP) ––––––––––––––––––––––––––––––––––––––––        
-
-//the idea behind this is if your shot is reaching weight quickly, cut the pump more grams before the target weight
-//and the other way around, if your shot is coming out slow, only cut the pump just before the target. 
-// There is a smarter way to do this, I haven't discoverd it yet.
-
- if (tV <= 20){
-  weightOffset = 3.0;
-  }   
- if ((tV >20) && (tV<= 22)){
-  weightOffset = 1.9;
-  }   
- if ((tV >22) && (tV<= 24)){
-  weightOffset = 1.5;
-  }   
- if ((tV >24) && (tV<= 26)){
-  weightOffset = 1.2;
-  }   
- if ((tV >26) && (tV<= 28)){
-  weightOffset = 1;
-  }   
- if ((tV >28) && (tV<= 30)){
-  weightOffset = .9;
-  }   
- if ((tV >30) && (tV<= 33)){
-  weightOffset = 1;
-  }   
- if (tV >33){
-  weightOffset = .75;
-  }   
-
-    
-}//This is the end of our loop
-
-//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------
-//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------
-
-//A few helper functions
-
-//This asks the scales to get the weight and add them up 
-void scaleFunc(){
-  w1 = scale.get_units();
-  w2 = scale2.get_units();
-  if((w1+w2)>1){
-    currentWeight=(w1+w2);
-   }
 }
-//This asks the scales to check the weight twice so in theory its more accurate, this is how the shot is weighed just after the pump is off
-void precisionScale(){
-  w1 = scale.get_units(2);
-  w2 = scale2.get_units(2);
-  currentWeight= (w1+w2);
-  }
 
-//We tare the cells just after the rotary knob is clicked, this helper function is almost not worth writing, but whatevs
-void tareScales(){
+// --------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------
+// --------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------//--------------
+
+/***
+   A few helper functions
+*/
+
+/*
+   This asks the scales to get the weight and add them up
+*/
+void scaleFunc() {
+  w1 = scale.get_units() + 0.6;
+  w2 = scale2.get_units();
+  if ((w1 + w2) > 1) {
+    currentWeight = round((w1 * 100 + w2 * 100));
+  }
+}
+
+/*
+   This asks the scales to check the weight twice so in theory its more accurate, this is how the shot is weighed just after the pump is off
+*/
+void precisionScale() {
+  w1 = scale.get_units(2) + 0.6;
+  w2 = scale2.get_units(2);
+  currentWeight = round((w1 * 100 + w2 * 100));
+}
+
+/*
+   We tare the cells just after the rotary knob is clicked
+*/
+void tareScales() {
   scale.tare();
   scale2.tare();
+}
+
+/*
+   Keeps track of the last N seconds of weights and recalculateds the flow
+*/
+void updateWeightFlow() {
+  if (currentTime / 1000 != currentSecond) {
+    currentSecond = currentTime / 1000;
+    weightFlow[currentSecond % flowTime] = currentWeight;
+    calcCurrentWeightFlow();
+  }
+}
+
+/*
+   Clears the weightFlow array for a new extraction
+*/
+void clearWeightFlow() {
+  for (int i = 0; i < flowTime; i++) {
+    weightFlow[i] = 0;
+  }
+}
+
+/*
+   Returns the flow over an interval of N seconds (measurements taken at the start of each second)
+*/
+void calcCurrentWeightFlow() {
+  int minVal = weightFlow[0];
+  int maxVal = weightFlow[0];
+
+  for (int i = 1; i < flowTime; i++) {
+    minVal = min(minVal, weightFlow[i]);
+    maxVal = max(maxVal, weightFlow[i]);
   }
 
-//--------------
+  // Average weight difference over interval flowTime
+  // (e.g. when flowTime is 2 you have measured 1 second of weight difference)
+  currentFlow = (maxVal - minVal) / (flowTime - 1);
+}
+
+/*
+   Calculates an index in EEPROM memory based on the current flowrate
+*/
+uint8_t hashFlow() {
+  uint8_t hash = (currentFlow / hashStep);
+  return (hash < hashMax ? hash : hashMax) + hashOffset;
+}
+
+/*
+   Calculates an index in EEPROM memory based on the last flowrate during extraction
+*/
+uint8_t hashLastFlow() {
+  uint8_t hash = (lastFlow / hashStep);
+  return (hash < hashMax ? hash : hashMax) + hashOffset;
+}
+
+/*
+   Reads the weightOffset from EEPROM memory related to the current flowrate
+*/
+void readWeightOffset() {
+  int offset = EEPROM.read(hashFlow());
+  // Convert offset from decigrams to centigrams
+  weightOffset = offset != 255 ? offset * 10 : 0;
+}
+
+/*
+   Writes the final weight overflow (drip) to EEPROM memory based on the flowrate
+   before target weight was reached
+*/
+void writeWeightOffset() {
+  uint8_t offset = EEPROM.read(hashLastFlow());
+  int currentOffset = currentWeight - targetWeight;
+
+  /* The final weight was less than the weight during extraction (e.g. someone took away the cup)
+     Or the overflow too great (e.g. someone leaned on the scale)
+  */
+  if (currentWeight < lastWeight - offsetPrecision || currentOffset > 1.5 * targetWeight) {
+    return;
+  }
+
+  int deltaOffset = currentOffset - offset;
+
+  // Write the offset to EEPROM in decigrams
+  if (abs(deltaOffset) > offsetPrecision) {
+    // Convert offset to decigrams
+    currentOffset = currentOffset / 10;
+
+    // 255 is reserved for unset values so 254 is chosen if the value is 255 or higher due to EEPROM limitations
+    currentOffset = currentOffset < 255 ? currentOffset : 254;
+
+    // new offset is the sum of old plus new (negative if stopped too early)
+    currentOffset = max(0, offset + currentOffset);
+    
+    EEPROM.write(hashLastFlow(), currentOffset);
+  }
+}
