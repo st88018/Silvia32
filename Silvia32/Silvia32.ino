@@ -11,6 +11,19 @@
 #define OLED_RESET -1
 Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
+//Button flags
+bool pressedup,pressedmid,presseddown;
+double presstime;
+
+// EEPROM stored data
+int storedWeight;
+int pressure;
+int preinfusion;
+
+//DualCore
+TaskHandle_t Core0;
+TaskHandle_t Core1;
+
 void setup() {
   Serial.begin(115200);
   pinMode(1, OUTPUT);
@@ -18,33 +31,64 @@ void setup() {
 
   oled_initialize();
 
-  // attachInterrupt(7, pressedup, FALLING);
-  // attachInterrupt(0, pressedmid, FALLING);
-  // attachInterrupt(6, presseddown, FALLING);
+  // This is seeing if this is the first time you are writing to the eeprom and if it is just put a 0 for now
+  if (EEPROM.read(256) != 123) {
+    EEPROM.write(256, 123);
+    storedWeight = 0;
+    Serial.println("EEPROM init");
+  }else { // This code runs every time the arduino powers back on... it sets the target weight to the last weight used so that it "remembers"
+    EEPROM.get(0, storedWeight);
+    Serial.println("Data get");
+  }
 
-  // xTaskCreatePinnedToCore(Task1code,"Task1",10000,NULL,1,&Task1,0);                   
-  // delay(500);  
-  // xTaskCreatePinnedToCore(Task2code,"Task2",10000,NULL,1,&Task2,1);
-  // delay(500);
+  presstime = micros();
+  attachInterrupt(digitalPinToInterrupt(6), pressup, FALLING);
+  attachInterrupt(digitalPinToInterrupt(7), pressmid, FALLING);
+  attachInterrupt(digitalPinToInterrupt(0), pressdown, FALLING);
+
+  xTaskCreatePinnedToCore(Core0code,"Core0",10000,NULL,1,&Core0,0);                   
+  delay(500);  
+  xTaskCreatePinnedToCore(Core1code,"Core1",10000,NULL,1,&Core1,1);
+  delay(500);
 }
 
-void Task1code( void * pvParameters ){
+void Core0code( void * pvParameters ){
 
   for(;;){
-
+    delay(500);
   } 
 }
 
-void Task2code( void * pvParameters ){
+void Core1code( void * pvParameters ){
 
   for(;;){
-
+    delay(500); 
   }
 }
 
 void loop() {
   // put nothing
+}
 
+void pressup(){
+  if(micros()-presstime>10000){
+    pressedup = true;
+    presstime = micros();
+  }
+}
+
+void pressmid(){
+  if(micros()-presstime>10000){
+    pressedmid = true;
+    presstime = micros();
+  }
+}
+
+void pressdown(){
+  if(micros()-presstime>10000){
+    presseddown = true;
+    presstime = micros();
+  }
 }
 
 //---------------------------------------------------------------------------------------------//
@@ -55,9 +99,12 @@ void oled_initialize(){
   for (;;); // Don't proceed, loop forever
   }
   display.clearDisplay();
-  display.setTextSize(1);
+  display.setTextSize(2.5);
   display.setTextColor(SH110X_WHITE); // Draw white text
-  display.setCursor(0, 0);
+  display.setCursor(18, 10);
   display.print("Silvia32");
+  display.setTextSize(1);
+  display.setCursor(54, 50);
+  display.print("Jeremy Chang");
   display.display();
 }
