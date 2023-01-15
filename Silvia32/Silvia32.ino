@@ -181,9 +181,10 @@ void oled_display(){
   }
   if(mode == 1){
     display.clearDisplay();
-    display.setTextSize(1);
-    display.setCursor(5, 5);
-    
+    // display.setTextSize(1);
+    // display.setCursor(5, 5);
+    displaybrewstate(0,true);
+    display.display();
   }
 }
 
@@ -210,4 +211,20 @@ void serial_debug(){
   Serial.print("Mode:");Serial.print(mode);
   Serial.print(" Target Temp:");Serial.print(targetTemp);Serial.print(" Current Temp:");Serial.println(currentTemp);
   // Serial.println(UItimer-millis());
+}
+
+void displaybrewstate(float brewpercent, bool brewstarted){ //0 to 1
+  int i = brewpercent*10; //shoud be 1~10
+  int j;
+  if(brewstarted && i<1){
+    if((millis()/750)%2 ==0){
+      i = 1;
+    }
+  }
+  for(j=0; j < 10-i; j++){
+    display.drawRect(118,j*6+1,10,6,SH110X_WHITE);
+  }
+  for(j;j<10;j++){
+    display.fillRect(118,j*6+1,10,6,SH110X_WHITE);
+  }
 }
