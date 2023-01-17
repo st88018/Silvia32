@@ -12,8 +12,8 @@
 Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 //Button flags
-bool pressedup, pressedmid, presseddown;
-double presstime;
+bool pressedup, pressedmid, longpressmid, presseddown;
+double presstime, pressmidtime;
 
 // EEPROM stored data
 int weightAddr = 0;
@@ -32,7 +32,7 @@ float currentWeight;
 float currentPressure;
 
 // Mode management
-int mode = 1;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
+int mode = 3;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
 int cursurPos = 0;
 
 bool brewstarted = 0;
@@ -57,11 +57,7 @@ void setup() {
 
   /*collect eeprom data*/
   EEPROM.begin(128);
-  // EEPROM.write(pressureAddr, targetpressure);
-  // EEPROM.write(weightAddr, targetWeight);
-  // EEPROM.write(preinfusionAddr, targetpreinfusion);
-  // EEPROM.write(tempAddr, targetTemp);
-  // EEPROM.commit();
+  // saveParameters();
   targetTemp = EEPROM.read(tempAddr);
   targetWeight = EEPROM.read(weightAddr);
   targetpressure = EEPROM.read(pressureAddr);
@@ -72,6 +68,7 @@ void setup() {
   presstime = millis();
   attachInterrupt(digitalPinToInterrupt(6), pressup, FALLING);
   attachInterrupt(digitalPinToInterrupt(7), pressmid, FALLING);
+  // attachInterrupt(digitalPinToInterrupt(7), releasemid, RISING);
   attachInterrupt(digitalPinToInterrupt(0), pressdown, FALLING);
 
   xTaskCreatePinnedToCore(Core0code, "Core0", 10000, NULL, 1, &Core0, 0);
@@ -82,18 +79,13 @@ void setup() {
 
 void Core0code(void* pvParameters) {
   for (;;) {
-    
-    // if (millis() - code0timer > 1000) {
-      // code0timer = millis();
-      serial_debug();
-    // }
+    serial_debug();
     delay(500);
   }
 }
-
 void Core1code(void* pvParameters) {
   for (;;) {
-    if (millis() - code1timer > 100) {
+    if (millis() - code1timer > 200) {
       code1timer = millis();
       oled_display();
       userinterface();
@@ -101,25 +93,29 @@ void Core1code(void* pvParameters) {
     }
   }
 }
-
 void loop() {
   // put nothing
 }
-
 void pressup() {
   if (millis() - presstime > 250) {
     pressedup = true;
     presstime = millis();
   }
 }
-
 void pressmid() {
   if (millis() - presstime > 250) {
     pressedmid = true;
     presstime = millis();
   }
 }
-
+void releasemid() {
+  Serial.println("release mid");
+  // if (millis() - pressmidtime > 2000){
+  //   longpressmid = true;
+  // }else{
+  //   pressedmid = true;
+  // }
+}
 void pressdown() {
   if (millis() - presstime > 250) {
     presseddown = true;
@@ -650,8 +646,21 @@ void userinterface() {
       cursurPos++;
       if(cursurPos>3) cursurPos = 1;
     }
+    if( pressedup && cursurPos !=0){
+      if(cursurPos == 1) targetTemp++;
+      if(cursurPos == 2) targetWeight++;
+      if(cursurPos == 3) targetpreinfusion++;
+      pressedup = false;
+    }
+    if( presseddown && cursurPos !=0){
+      if(cursurPos == 1) targetTemp--;
+      if(cursurPos == 2) targetWeight--;
+      if(cursurPos == 3) targetpreinfusion--;
+      presseddown = false;
+    }
     if (millis() - presstime > 10000){ //stop selecting while not using
       cursurPos = 0;
+      saveParameters();
     }
   }
 }
@@ -664,7 +673,12 @@ void serial_debug() {
   Serial.print(targetTemp);
   Serial.print(" CurrentTemp:");
   Serial.println(currentTemp);
-  Serial.println(blinkstate);
+  Serial.print(presstime);
+  Serial.print(" ");
+  Serial.print(pressedup);
+  Serial.print(pressedmid);
+  Serial.print(longpressmid);
+  Serial.println(presseddown);
 }
 void displayStatuscolumn(){
   int BrewPos[2] = {8,56};
@@ -818,4 +832,11 @@ void blinkcontroller(){
       blinkcounter = 0;
       blinkstate = !blinkstate;
     }
+}
+void saveParameters(){
+  EEPROM.write(pressureAddr, targetpressure);
+  EEPROM.write(weightAddr, targetWeight);
+  EEPROM.write(preinfusionAddr, targetpreinfusion);
+  EEPROM.write(tempAddr, targetTemp);
+  EEPROM.commit();
 }
