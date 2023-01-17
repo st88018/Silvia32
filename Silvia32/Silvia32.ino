@@ -45,9 +45,10 @@ bool blinkstate = 0;
 //DualCore
 TaskHandle_t Core0;
 TaskHandle_t Core1;
+float code0timer,code1timer;
 
 void setup() {
-  
+  Serial.begin(115200);
   pinMode(1, OUTPUT);
   digitalWrite(1, HIGH);
 
@@ -80,21 +81,22 @@ void setup() {
 }
 
 void Core0code(void* pvParameters) {
-  Serial.begin(115270);
   for (;;) {
-    serial_debug();
+    // if (millis() - code0timer > 1000) {
+      // code0timer = millis();
+      serial_debug();
+    // }
+    delay(500);
   }
 }
 
 void Core1code(void* pvParameters) {
-  float UItimer = millis();
-  float OledBlinktimer = millis();
   for (;;) {
-    if (millis() - UItimer > 100) {
-      UItimer = millis();
+    if (millis() - code1timer > 100) {
+      code1timer = millis();
       oled_display();
       userinterface();
-      
+      blinkcontroller();
     }
   }
 }
@@ -598,7 +600,7 @@ void oled_display() {
   }
   if (mode == 1) {
     display.clearDisplay();
-    displaymode(mode);
+    displayStatuscolumn();
     displayTemp();
     displayPress();
     displayWeight();
@@ -629,26 +631,52 @@ void userinterface() {
 void serial_debug() {
   Serial.print("Mode:");
   Serial.print(mode);
-  Serial.print(" Target Temp:");
+  Serial.print(" TargetTemp:");
   Serial.print(targetTemp);
-  Serial.print(" Current Temp:");
+  Serial.print(" CurrentTemp:");
   Serial.println(currentTemp);
 }
-void displaymode(int mode){
-  if(mode == 1){
-    display.fillTriangle(0,55, 5,55, 5,64, SH110X_WHITE);
-    display.fillTriangle(29,64, 29,55, 34,55, SH110X_WHITE);
+void displayStatuscolumn(){
+  int BrewPos[2] = {8,56};
+  int cleanPos[2] = {41,56};
+  int settingPos[2] = {80,56};
+  if(mode == 1){ // Wait for Brew
     display.setTextSize(1);
+    
+    display.fillTriangle(0,55, 4,55, 4,64, SH110X_WHITE);
+    display.fillRect(5,55,3,9, SH110X_WHITE);
+    display.fillTriangle(34,64, 34,55, 38,55, SH110X_WHITE);
+    display.fillRect(32,55,2,9, SH110X_WHITE);
+
+    // display.drawLine(0,55, 5,64,SH110X_WHITE);
+    
     display.setTextColor(SH110X_BLACK, SH110X_WHITE);
-    display.setCursor(5, 56);
+    // display.setTextColor(SH110X_WHITE);
+    display.setCursor(BrewPos[0],BrewPos[1]);
     display.print("Brew");
-    display.setCursor(36, 56);
+
+    // display.drawLine(cleanPos[0]-8,64, cleanPos[0]-3,55, SH110X_WHITE);
+    
     display.setTextColor(SH110X_WHITE);
+    display.setCursor(cleanPos[0], cleanPos[1]);
     display.print("clean");
-    display.drawLine(66,64, 71,55, SH110X_WHITE);
-    display.setCursor(73, 56);
+    
+    display.drawLine(settingPos[0]-8,64, settingPos[0]-3,55, SH110X_WHITE);
+    
+    display.setCursor(settingPos[0], settingPos[1]);
     display.print("setting");
-    display.drawLine(115,64, 120,55, SH110X_WHITE);
+    
+    display.drawLine(123,64, 128,55, SH110X_WHITE);
+  }
+  if(mode == 2){ //Brewing
+
+  }
+  if(mode == 3){ //Clean
+
+
+  }
+  if(mode == 4){ //Setting
+
   }
   
 }
@@ -656,12 +684,6 @@ void displaybrewstate(float brewpercent) {  //0 to 1
   int i = brewpercent * 10;                                   //shoud be 1~10
   int j;
   if (i < 1) {
-    if (blinkcounter<5) {
-      blinkcounter++;
-    }else{
-      blinkcounter = 0;
-      blinkstate = !blinkstate;
-    }
     if(blinkstate) i = 1;
   }
   for (j = 0; j < 10 - i; j++) {
@@ -717,4 +739,12 @@ void displayPreinfusion() {
   display.setTextSize(2);
   display.setCursor(79, 40);
   display.print(targetpreinfusion);
+}
+void blinkcontroller(){
+  if (blinkcounter<5) {
+      blinkcounter++;
+    }else{
+      blinkcounter = 0;
+      blinkstate = !blinkstate;
+    }
 }
