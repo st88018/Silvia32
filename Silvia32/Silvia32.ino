@@ -12,7 +12,7 @@
 Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 //Button flags
-bool pressedup, pressedmid, longpressmid, presseddown;
+bool pressedup, pressedmid1, pressedmid, longpressmid, presseddown;
 double presstime, pressmidtime;
 
 // EEPROM stored data
@@ -32,7 +32,7 @@ float currentWeight;
 float currentPressure;
 
 // Mode management
-int mode = 3;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
+int mode = 1;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
 int cursurPos = 0;
 
 bool brewstarted = 0;
@@ -68,7 +68,6 @@ void setup() {
   presstime = millis();
   attachInterrupt(digitalPinToInterrupt(6), pressup, FALLING);
   attachInterrupt(digitalPinToInterrupt(7), pressmid, FALLING);
-  // attachInterrupt(digitalPinToInterrupt(7), releasemid, RISING);
   attachInterrupt(digitalPinToInterrupt(0), pressdown, FALLING);
 
   xTaskCreatePinnedToCore(Core0code, "Core0", 10000, NULL, 1, &Core0, 0);
@@ -85,6 +84,7 @@ void Core0code(void* pvParameters) {
 }
 void Core1code(void* pvParameters) {
   for (;;) {
+    longpresschecker();
     if (millis() - code1timer > 200) {
       code1timer = millis();
       oled_display();
@@ -100,21 +100,26 @@ void pressup() {
   if (millis() - presstime > 250) {
     pressedup = true;
     presstime = millis();
+    pressmidtime = millis();
   }
 }
 void pressmid() {
   if (millis() - presstime > 250) {
-    pressedmid = true;
-    presstime = millis();
+    pressedmid1 = true;
+    pressmidtime = millis();
   }
 }
-void releasemid() {
-  Serial.println("release mid");
-  // if (millis() - pressmidtime > 2000){
-  //   longpressmid = true;
-  // }else{
-  //   pressedmid = true;
-  // }
+void longpresschecker(){
+  if(pressedmid1 && digitalRead(7)){
+    pressedmid = true;
+    pressedmid1 = false;
+    presstime = millis();
+  }
+  if(pressedmid1 && millis()-pressmidtime>2000){
+    longpressmid = true;
+    pressedmid1 = false;
+    presstime = millis(); 
+  }
 }
 void pressdown() {
   if (millis() - presstime > 250) {
@@ -641,6 +646,10 @@ void userinterface() {
     }
   }
   if (mode == 1){
+    if(longpressmid){
+      mode = 3;
+      longpressmid = false;
+    }
     if(pressedmid){
       pressedmid = false;
       cursurPos++;
@@ -663,6 +672,18 @@ void userinterface() {
       saveParameters();
     }
   }
+  if (mode == 3){
+    if(longpressmid){
+      mode = 4;
+      longpressmid = false;
+    }
+  }
+  if (mode == 4){
+    if(longpressmid){
+      mode = 1;
+      longpressmid = false;
+    }
+  }
 }
 void serial_debug() {
   Serial.print("Mode:");
@@ -673,12 +694,15 @@ void serial_debug() {
   Serial.print(targetTemp);
   Serial.print(" CurrentTemp:");
   Serial.println(currentTemp);
-  Serial.print(presstime);
+  Serial.print(millis() - pressmidtime);
   Serial.print(" ");
   Serial.print(pressedup);
+  Serial.print(pressedmid1);
   Serial.print(pressedmid);
   Serial.print(longpressmid);
-  Serial.println(presseddown);
+  Serial.print(presseddown);
+  Serial.print(" ");
+  Serial.println(digitalRead(7));
 }
 void displayStatuscolumn(){
   int BrewPos[2] = {8,56};
