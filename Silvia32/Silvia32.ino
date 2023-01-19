@@ -31,13 +31,17 @@ float currentTemp;
 float currentWeight;
 float currentPressure;
 
+
 // Mode management
-int mode = 1;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
+int mode = 4;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
 int cursurPos = 0;
 
 bool brewstarted = 0;
+double BrewstartedTime; // in millis
 float brewpercent = 0; //something from 0~1
 int cleancount = 0;
+//Controllers
+double Temp_Integral,Temp_last_error,Pressure_Integral,Pressure_last_error;
 
 //Blink
 int blinkcounter = 0;
@@ -69,13 +73,12 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(6), pressup, FALLING);
   attachInterrupt(digitalPinToInterrupt(7), pressmid, FALLING);
   attachInterrupt(digitalPinToInterrupt(0), pressdown, FALLING);
-
+  /*Initialize dual core*/
   xTaskCreatePinnedToCore(Core0code, "Core0", 10000, NULL, 1, &Core0, 0);
   delay(500);
   xTaskCreatePinnedToCore(Core1code, "Core1", 10000, NULL, 1, &Core1, 1);
   delay(500);
 }
-
 void Core0code(void* pvParameters) {
   for (;;) {
     serial_debug();
@@ -85,7 +88,7 @@ void Core0code(void* pvParameters) {
 void Core1code(void* pvParameters) {
   for (;;) {
     longpresschecker();
-    if (millis() - code1timer > 200) {
+    if (millis() - code1timer > 50) {
       code1timer = millis();
       oled_display();
       userinterface();
@@ -97,14 +100,14 @@ void loop() {
   // put nothing
 }
 void pressup() {
-  if (millis() - presstime > 250) {
+  if (millis() - presstime > 500) {
     pressedup = true;
     presstime = millis();
     pressmidtime = millis();
   }
 }
 void pressmid() {
-  if (millis() - presstime > 250) {
+  if (millis() - presstime > 500) {
     pressedmid1 = true;
     pressmidtime = millis();
   }
@@ -115,19 +118,18 @@ void longpresschecker(){
     pressedmid1 = false;
     presstime = millis();
   }
-  if(pressedmid1 && millis()-pressmidtime>2000){
+  if(pressedmid1 && millis()-pressmidtime>1000){
     longpressmid = true;
     pressedmid1 = false;
     presstime = millis(); 
   }
 }
 void pressdown() {
-  if (millis() - presstime > 250) {
+  if (millis() - presstime > 500) {
     presseddown = true;
     presstime = millis();
   }
 }
-
 //---------------------------------------------------------------------------------------------//
 static const unsigned char PROGMEM logo_bmp[] = {
   /* 0X00,0X01,0X32,0X00,0X3D,0X00, */
@@ -559,7 +561,6 @@ static const unsigned char PROGMEM logo_bmp[] = {
   0X00,
   0X00,
 };
-
 void oled_initialize() {
   if (!display.begin(0x3c, true)) {  // Address 0x3C for 128x32
     Serial.println(F("SSD1306 allocation failed"));
@@ -580,7 +581,6 @@ void oled_initialize() {
   display.drawBitmap(40, 2, logo_bmp, 50, 61, 1);
   display.display();
 }
-
 void oled_display() {
   display.clearDisplay();
   if (mode == 0 && millis() > 4000) {
@@ -622,8 +622,7 @@ void oled_display() {
     display.setCursor(80, 32);
     display.print(cleancount);
   }if(mode ==4){
-    display.drawRect(0, 0, 128, 56, SH110X_WHITE);
-    display.setTextSize(1);
+    displaySettings();
   }
   displayStatuscolumn();
   display.display();
@@ -649,6 +648,8 @@ void userinterface() {
     if(longpressmid){
       mode = 3;
       longpressmid = false;
+      cursurPos = 0;
+      saveParameters();
     }
     if(pressedmid){
       pressedmid = false;
@@ -840,14 +841,37 @@ void displayPreinfusion() {
   display.setTextSize(1);
   display.setTextColor(SH110X_WHITE);  // Draw white text
   display.setCursor(66, 30);
-  display.print("Preinfuse");
+  if(mode == 1){
+    display.print("Preinfuse");
+  }else{
+    display.print("Time");
+  }
   display.setTextSize(2);
   display.setCursor(79, 40);
   if(cursurPos == 3){
     display.drawLine(79,40,79,54, SH110X_WHITE);
     display.setTextColor(SH110X_BLACK, SH110X_WHITE);
   }
-  display.print(targetpreinfusion);
+  if(mode == 1){
+    display.print(targetpreinfusion);
+  }else{ //while brewing
+    double currentTime = -targetpreinfusion+((millis()-BrewstartedTime)*0.001);
+    if (currentTime > 99.9) currentTime = 99.9;
+    display.print(abs(currentTime),1);
+  }
+}
+void displaySettings(){
+  display.drawRect(0, 0, 128, 56, SH110X_WHITE);
+  display.setTextSize(1);
+  display.setTextColor(SH110X_WHITE);  // Draw white text
+  display.setCursor(4, 4);
+  display.print("Temp PID");
+  display.setCursor(4, 15);
+  display.print("Preasure PID");
+  display.setCursor(4, 26);
+  display.print("Preinfuse preasure");
+  display.setCursor(4, 37);
+  display.print("HX711 scale");
 }
 void blinkcontroller(){
   if (blinkcounter<5) {
@@ -863,4 +887,32 @@ void saveParameters(){
   EEPROM.write(preinfusionAddr, targetpreinfusion);
   EEPROM.write(tempAddr, targetTemp);
   EEPROM.commit();
+}
+double Temp_controller(double targetTemp, double currentTemp,double dT){
+  float PID[3] = {1,0,0};
+  double error = targetTemp-currentTemp;
+  Temp_Integral += error*dT;
+  constrain(Temp_Integral, -1,1);
+  double Tempderivative = (error-Temp_last_error)/(dT+1e-10);
+  Temp_last_error = error;
+  double output = error*PID[0]+Temp_Integral*PID[1]+Tempderivative*PID[2];
+  return(output);
+}
+double Pressure_controller(double targetPressure, double currentPressure,double dT){
+  float PID[3] = {1,0,0};
+  double error = targetPressure-currentPressure;
+  Pressure_Integral += error*dT;
+  constrain(Pressure_Integral, -1,1);
+  double Pressurederivative = (error-Pressure_last_error)/(dT+1e-10);
+  Pressure_last_error = error;
+  double output = error*PID[0]+Pressure_Integral*PID[1]+Pressurederivative*PID[2];
+  return(output);
+}
+void PCA9685_output(){
+  //Temperature SSR
+
+  //Solenoid SSR
+
+  //Pressure dimmer
+  
 }
