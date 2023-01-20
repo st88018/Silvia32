@@ -31,10 +31,10 @@ float currentTemp;
 float currentWeight;
 float currentPressure;
 
-
 // Mode management
 int mode = 4;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
 int cursurPos = 0;
+bool cursurPosSelected = false;
 
 bool brewstarted = 0;
 double BrewstartedTime; // in millis
@@ -42,6 +42,13 @@ float brewpercent = 0; //something from 0~1
 int cleancount = 0;
 //Controllers
 double Temp_Integral,Temp_last_error,Pressure_Integral,Pressure_last_error;
+
+float Kp_temp = 10;
+float Ki_temp = 0;
+float Kd_temp = 0;
+float Kp_pressure = 10;
+float Ki_pressure = 0;
+float Kd_pressure = 0;
 
 //Blink
 int blinkcounter = 0;
@@ -61,11 +68,17 @@ void setup() {
 
   /*collect eeprom data*/
   EEPROM.begin(128);
-  // saveParameters();
+  saveParameters();
   targetTemp = EEPROM.read(tempAddr);
   targetWeight = EEPROM.read(weightAddr);
   targetpressure = EEPROM.read(pressureAddr);
   targetpreinfusion = EEPROM.read(preinfusionAddr);
+  Kp_temp = EEPROM.read(Kp_tempAddr);
+  Ki_temp = EEPROM.read(Ki_tempAddr);
+  Kd_temp = EEPROM.read(Kd_tempAddr);
+  Kp_pressure = EEPROM.read(Kp_pressureAddr);
+  Ki_pressure = EEPROM.read(Ki_pressureAddr);
+  Kd_pressure = EEPROM.read(Kd_pressureAddr);
   Serial.print("EEPROM updated");
 
   /*Initialize manual input*/
@@ -100,14 +113,14 @@ void loop() {
   // put nothing
 }
 void pressup() {
-  if (millis() - presstime > 500) {
+  if (millis() - presstime > 350) {
     pressedup = true;
     presstime = millis();
     pressmidtime = millis();
   }
 }
 void pressmid() {
-  if (millis() - presstime > 500) {
+  if (millis() - presstime > 350) {
     pressedmid1 = true;
     pressmidtime = millis();
   }
@@ -125,7 +138,7 @@ void longpresschecker(){
   }
 }
 void pressdown() {
-  if (millis() - presstime > 500) {
+  if (millis() - presstime > 350) {
     presseddown = true;
     presstime = millis();
   }
@@ -647,26 +660,51 @@ void userinterface() {
   if (mode == 1){
     if(longpressmid){
       mode = 3;
+      cursurPos = 0;
       longpressmid = false;
+      pressedup = false;
+      pressedmid = false;
+      presseddown = false;
       cursurPos = 0;
       saveParameters();
     }
     if(pressedmid){
       pressedmid = false;
-      cursurPos++;
-      if(cursurPos>3) cursurPos = 1;
+      if(cursurPos != 0) cursurPosSelected = !cursurPosSelected;
     }
-    if( pressedup && cursurPos !=0){
+    if( pressedup && cursurPosSelected){
       if(cursurPos == 1) targetTemp++;
       if(cursurPos == 2) targetWeight++;
       if(cursurPos == 3) targetpreinfusion++;
       pressedup = false;
     }
-    if( presseddown && cursurPos !=0){
+    if(pressedup){
+      if(cursurPos == 0){
+        cursurPos = 3;
+      }else{
+        cursurPos--;
+      }
+      if(cursurPos == 0) cursurPos = 3;
+      pressedup = false;      
+    }
+    if (millis() - presstime > 10000){ //stop selecting while not using
+      cursurPos = 0;
+      saveParameters();
+    }
+    if( presseddown && cursurPosSelected){
       if(cursurPos == 1) targetTemp--;
       if(cursurPos == 2) targetWeight--;
       if(cursurPos == 3) targetpreinfusion--;
       presseddown = false;
+    }
+    if(presseddown){
+      if(cursurPos == 0){
+        cursurPos = 1;
+      }else{
+        cursurPos++;
+      }
+      if(cursurPos == 4) cursurPos = 1;
+      presseddown = false;      
     }
     if (millis() - presstime > 10000){ //stop selecting while not using
       cursurPos = 0;
@@ -676,13 +714,41 @@ void userinterface() {
   if (mode == 3){
     if(longpressmid){
       mode = 4;
+      cursurPos = 0;
       longpressmid = false;
+      pressedup = false;
+      pressedmid = false;
+      presseddown = false;
     }
   }
   if (mode == 4){
     if(longpressmid){
       mode = 1;
+      cursurPos = 0;
       longpressmid = false;
+      pressedup = false;
+      pressedmid = false;
+      presseddown = false;
+    }
+    if(cursurPos < 4){
+      if(pressedmid){
+        pressedmid = false;
+        if(cursurPos == 0) cursurPos = 4; // Temp P,I,D
+        if(cursurPos == 1) cursurPos = 7; // Pressure P,I,D
+        if(cursurPos == 2) cursurPos = 10; // Preinfusion pressure
+        if(cursurPos == 3) cursurPos = 11; // HX711 scale
+      }
+      if(pressedup){
+        cursurPos--;
+        cursurPos = constrain(cursurPos, 0,3);
+        pressedup = false;
+      }
+      if(presseddown){
+        cursurPos++;
+        cursurPos = constrain(cursurPos, 0,3);
+        presseddown = false;
+      } 
+      
     }
   }
 }
@@ -798,8 +864,12 @@ void displayTemp() {
   display.print("Temp");
   display.print(" (");
   if(cursurPos == 1){
-    display.drawLine(37,2,37,9, SH110X_WHITE);
-    display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    if(cursurPosSelected && !blinkstate){
+    
+    }else{
+      display.drawLine(37,2,37,9, SH110X_WHITE);
+      display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    }
   }
   display.print(targetTemp);
   display.setTextColor(SH110X_WHITE);
@@ -826,8 +896,12 @@ void displayWeight() {
   display.print("Weight");
   display.print("(");
   if(cursurPos == 2){
-    display.drawLine(107,2,107,9, SH110X_WHITE);
-    display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    if(cursurPosSelected && !blinkstate){
+    
+    }else{
+      display.drawLine(107,2,107,9, SH110X_WHITE);
+      display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    }
   }
   display.print(targetWeight);
   display.setTextColor(SH110X_WHITE);
@@ -849,8 +923,12 @@ void displayPreinfusion() {
   display.setTextSize(2);
   display.setCursor(79, 40);
   if(cursurPos == 3){
-    display.drawLine(79,40,79,54, SH110X_WHITE);
-    display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    if(cursurPosSelected && !blinkstate){
+    
+    }else{
+      display.drawLine(79,40,79,54, SH110X_WHITE);
+      display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    }
   }
   if(mode == 1){
     display.print(targetpreinfusion);
@@ -863,49 +941,89 @@ void displayPreinfusion() {
 void displaySettings(){
   display.drawRect(0, 0, 128, 56, SH110X_WHITE);
   display.setTextSize(1);
-  display.setTextColor(SH110X_WHITE);  // Draw white text
+  display.setTextColor(SH110X_WHITE);
+  if (cursurPos == 0) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
   display.setCursor(4, 4);
-  display.print("Temp PID");
+  if (cursurPos < 4) display.print("Temperature PID");
+  display.setTextColor(SH110X_WHITE);
+  if (cursurPos == 1) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
   display.setCursor(4, 15);
-  display.print("Preasure PID");
+  if (cursurPos < 4) display.print("Pressure PID");
+  display.setTextColor(SH110X_WHITE);
+  if (cursurPos == 2) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
   display.setCursor(4, 26);
-  display.print("Preinfuse preasure");
+  if (cursurPos < 4) display.print("Preinfuse pressure");
+  display.setTextColor(SH110X_WHITE);
+  if (cursurPos == 3) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
   display.setCursor(4, 37);
-  display.print("HX711 scale");
+  if (cursurPos < 4) display.print("HX711 scale");
+  if (cursurPos == 4){ //Tunung Temp PID
+    display.setTextSize(1);
+    display.setCursor(4, 4);
+    display.setTextColor(SH110X_WHITE);
+    display.print("Temperature PID");
+    display.setTextSize(2);
+    display.setCursor(5, 25);
+    display.print("P");
+    display.setCursor(45, 25);
+    display.print("I");
+    display.setCursor(85, 25);
+    display.print("D");
+    display.setTextSize(1);
+    display.setCursor(20, 30);
+    display.print(Kp_temp,1);
+    display.setCursor(60, 30);
+    display.print(Ki_temp,1);
+    display.setCursor(100, 30);
+    display.print(Kd_temp,1);
+  }
+  if (cursurPos == 7){ //Tunung Pressure PID
+    
+  }
+  if (cursurPos == 10){ //Tunung Preinfusion pressure
+    
+  }
+  if (cursurPos == 11){ //Tunung HX711
+    
+  }
 }
 void blinkcontroller(){
   if (blinkcounter<5) {
-      blinkcounter++;
-    }else{
-      blinkcounter = 0;
-      blinkstate = !blinkstate;
-    }
+    blinkcounter++;
+  }else{
+    blinkcounter = 0;
+    blinkstate = !blinkstate;
+  }
 }
 void saveParameters(){
   EEPROM.write(pressureAddr, targetpressure);
   EEPROM.write(weightAddr, targetWeight);
   EEPROM.write(preinfusionAddr, targetpreinfusion);
   EEPROM.write(tempAddr, targetTemp);
+  EEPROM.write(Kp_tempAddr, Kp_temp);
+  EEPROM.write(Ki_tempAddr, Ki_temp);
+  EEPROM.write(Kd_tempAddr, Kd_temp);
+  EEPROM.write(Kp_pressureAddr, Kp_pressure);
+  EEPROM.write(Ki_pressureAddr, Ki_pressure);
+  EEPROM.write(Kd_pressureAddr, Kd_pressure);
   EEPROM.commit();
 }
 double Temp_controller(double targetTemp, double currentTemp,double dT){
-  float PID[3] = {1,0,0};
   double error = targetTemp-currentTemp;
   Temp_Integral += error*dT;
-  constrain(Temp_Integral, -1,1);
+  Temp_Integral = constrain(Temp_Integral, -1,1);
   double Tempderivative = (error-Temp_last_error)/(dT+1e-10);
   Temp_last_error = error;
-  double output = error*PID[0]+Temp_Integral*PID[1]+Tempderivative*PID[2];
+  double output = error*Kp_temp+Temp_Integral*Ki_temp+Tempderivative*Kd_temp;
   return(output);
 }
 double Pressure_controller(double targetPressure, double currentPressure,double dT){
-  float PID[3] = {1,0,0};
   double error = targetPressure-currentPressure;
   Pressure_Integral += error*dT;
-  constrain(Pressure_Integral, -1,1);
+  Pressure_Integral = constrain(Pressure_Integral, -1,1);
   double Pressurederivative = (error-Pressure_last_error)/(dT+1e-10);
   Pressure_last_error = error;
-  double output = error*PID[0]+Pressure_Integral*PID[1]+Pressurederivative*PID[2];
+  double output = error*Kp_pressure+Pressure_Integral*Ki_pressure+Pressurederivative*Kd_pressure;
   return(output);
 }
 void PCA9685_output(){
@@ -915,4 +1033,7 @@ void PCA9685_output(){
 
   //Pressure dimmer
   
+}
+void ADS1115_input(){
+
 }
