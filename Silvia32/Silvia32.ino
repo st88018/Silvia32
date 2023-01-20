@@ -20,6 +20,12 @@ int weightAddr = 0;
 int tempAddr = 10;
 int pressureAddr = 20;
 int preinfusionAddr = 30;
+int Kp_tempAddr = 40;
+int Ki_tempAddr = 50;
+int Kd_tempAddr = 60;
+int Kp_pressureAddr = 70;
+int Ki_pressureAddr = 80;
+int Kd_pressureAddr = 90;
 
 int targetWeight = 32;  //in gram
 int targetTemp = 93;   //in celsius degree
