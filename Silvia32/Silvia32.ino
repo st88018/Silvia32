@@ -736,25 +736,26 @@ void userinterface() {
       pressedmid = false;
       presseddown = false;
     }
-    if(cursurPos < 4){
-      if(pressedmid){
-        pressedmid = false;
-        if(cursurPos == 0) cursurPos = 4; // Temp P,I,D
-        if(cursurPos == 1) cursurPos = 7; // Pressure P,I,D
-        if(cursurPos == 2) cursurPos = 10; // Preinfusion pressure
-        if(cursurPos == 3) cursurPos = 11; // HX711 scale
-      }
-      if(pressedup){
-        cursurPos--;
-        cursurPos = constrain(cursurPos, 0,3);
-        pressedup = false;
-      }
-      if(presseddown){
-        cursurPos++;
-        cursurPos = constrain(cursurPos, 0,3);
-        presseddown = false;
-      } 
-      
+    if(pressedmid){
+      pressedmid = false;
+      if(cursurPos == 0){ cursurPos = 4; cursurPosSelected = false;} // Temp P,I,D
+      if(cursurPos == 1){ cursurPos = 7; cursurPosSelected = false;} // Pressure P,I,D
+      if(cursurPos == 2){ cursurPos = 10; cursurPosSelected = false;} // Preinfusion pressure
+      if(cursurPos == 3){ cursurPos = 11; cursurPosSelected = false;} // HX711 scale
+      if(cursurPos > 3) cursurPosSelected = !cursurPosSelected;
+      if(cursurPos == 7){ cursurPos = 0; cursurPosSelected = false;}
+    }
+    if(pressedup){
+      if(cursurPos < 4) constrain(cursurPos--,0,3);
+      if(cursurPos > 3 && !cursurPosSelected) cursurPos++;
+      if(cursurPos == 4 && cursurPosSelected){Kp_temp = Kp_temp+0.1; constrain(Kp_temp, 0, 100);}
+      pressedup = false;
+    }
+    if(presseddown){
+      if(cursurPos < 4) constrain(cursurPos++,0,3);
+      if(cursurPos > 3 && !cursurPosSelected) cursurPos--;
+      if(cursurPos == 4 && cursurPosSelected){Kp_temp = Kp_temp-0.1; constrain(Kp_temp, 0, 100);}
+      presseddown = false;
     }
   }
 }
@@ -768,14 +769,18 @@ void serial_debug() {
   Serial.print(" CurrentTemp:");
   Serial.println(currentTemp);
   Serial.print(millis() - pressmidtime);
-  Serial.print(" ");
+  Serial.print(" pressedup:");
   Serial.print(pressedup);
+  Serial.print(" pressedmid1:");
   Serial.print(pressedmid1);
+  Serial.print(" pressedmid:");
   Serial.print(pressedmid);
+  Serial.print(" longpressmid:");
   Serial.print(longpressmid);
+  Serial.print(" presseddown:");
   Serial.print(presseddown);
-  Serial.print(" ");
-  Serial.println(digitalRead(7));
+  Serial.print(" cursurPosSelected:");
+  Serial.println(cursurPosSelected);
 }
 void displayStatuscolumn(){
   int BrewPos[2] = {8,56};
@@ -963,7 +968,7 @@ void displaySettings(){
   if (cursurPos == 3) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
   display.setCursor(4, 37);
   if (cursurPos < 4) display.print("HX711 scale");
-  if (cursurPos == 4){ //Tunung Temp PID
+  if (cursurPos > 3 && cursurPos < 7){ //Tunung Temp PID
     display.setTextSize(1);
     display.setCursor(4, 4);
     display.setTextColor(SH110X_WHITE);
@@ -977,11 +982,21 @@ void displaySettings(){
     display.print("D");
     display.setTextSize(1);
     display.setCursor(20, 30);
+    display.setTextColor(SH110X_WHITE);
+    if (cursurPos == 4) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
     display.print(Kp_temp,1);
     display.setCursor(60, 30);
+    display.setTextColor(SH110X_WHITE);
+    if (cursurPos == 5) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
     display.print(Ki_temp,1);
     display.setCursor(100, 30);
+    display.setTextColor(SH110X_WHITE);
+    if (cursurPos == 6) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
     display.print(Kd_temp,1);
+    display.setCursor(102, 45);
+    display.setTextColor(SH110X_WHITE);
+    if (cursurPos == 7) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    display.print("back");
   }
   if (cursurPos == 7){ //Tunung Pressure PID
     
