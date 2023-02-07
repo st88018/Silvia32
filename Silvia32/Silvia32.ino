@@ -37,6 +37,11 @@ float currentTemp;
 float currentWeight;
 float currentPressure;
 
+//Manual input
+#define ROTTARY_BUTTON 13
+#define ROTTARY_A      14
+#define ROTTARY_B      21
+
 // Mode management
 int mode = 4;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
 int cursurPos = 0;
@@ -90,8 +95,8 @@ void setup() {
   /*Initialize manual input*/
   presstime = millis();
   attachInterrupt(digitalPinToInterrupt(6), pressup, FALLING);
-  attachInterrupt(digitalPinToInterrupt(7), pressmid, FALLING);
-  attachInterrupt(digitalPinToInterrupt(0), pressdown, FALLING);
+  attachInterrupt(digitalPinToInterrupt(ROTTARY_BUTTON), pressmid, FALLING);
+  
   /*Initialize dual core*/
   xTaskCreatePinnedToCore(Core0code, "Core0", 10000, NULL, 1, &Core0, 0);
   delay(500);
@@ -132,7 +137,7 @@ void pressmid() {
   }
 }
 void longpresschecker(){
-  if(pressedmid1 && digitalRead(7)){
+  if(pressedmid1 && digitalRead(ROTTARY_BUTTON)){
     pressedmid = true;
     pressedmid1 = false;
     presstime = millis();
@@ -736,25 +741,45 @@ void userinterface() {
       pressedmid = false;
       presseddown = false;
     }
-    if(pressedmid){
+    if(pressedmid && cursurPos < 4){
       pressedmid = false;
       if(cursurPos == 0){ cursurPos = 4; cursurPosSelected = false;} // Temp P,I,D
-      if(cursurPos == 1){ cursurPos = 7; cursurPosSelected = false;} // Pressure P,I,D
+      if(cursurPos == 1){ cursurPos = 8; cursurPosSelected = false;} // Pressure P,I,D
       if(cursurPos == 2){ cursurPos = 10; cursurPosSelected = false;} // Preinfusion pressure
       if(cursurPos == 3){ cursurPos = 11; cursurPosSelected = false;} // HX711 scale
-      if(cursurPos > 3) cursurPosSelected = !cursurPosSelected;
+      cursurPosSelected = false;
+    }
+    if(pressedmid && cursurPos > 3){
+      pressedmid = false;
+      if(cursurPos > 3 && cursurPos < 7) cursurPosSelected = !cursurPosSelected;
       if(cursurPos == 7){ cursurPos = 0; cursurPosSelected = false;}
     }
     if(pressedup){
-      if(cursurPos < 4) constrain(cursurPos--,0,3);
-      if(cursurPos > 3 && !cursurPosSelected) cursurPos++;
+      if(cursurPos < 4){
+        cursurPos--;
+        constrain(cursurPos,0,3);
+        }
+      if(cursurPos > 3 && cursurPos < 7 && !cursurPosSelected){
+        cursurPos--;
+        constrain(cursurPos,4,6);
+      } 
       if(cursurPos == 4 && cursurPosSelected){Kp_temp = Kp_temp+0.1; constrain(Kp_temp, 0, 100);}
+      if(cursurPos == 5 && cursurPosSelected){Ki_temp = Ki_temp+0.1; constrain(Kp_temp, 0, 100);}
+      if(cursurPos == 6 && cursurPosSelected){Kd_temp = Kd_temp+0.1; constrain(Kp_temp, 0, 100);}
       pressedup = false;
     }
     if(presseddown){
-      if(cursurPos < 4) constrain(cursurPos++,0,3);
-      if(cursurPos > 3 && !cursurPosSelected) cursurPos--;
+      if(cursurPos < 4){
+        cursurPos++;
+        constrain(cursurPos,0,3);
+        }
+      if(cursurPos > 3 && cursurPos < 7 && !cursurPosSelected){
+        cursurPos++;
+        constrain(cursurPos,4,6);
+      }
       if(cursurPos == 4 && cursurPosSelected){Kp_temp = Kp_temp-0.1; constrain(Kp_temp, 0, 100);}
+      if(cursurPos == 5 && cursurPosSelected){Ki_temp = Ki_temp-0.1; constrain(Kp_temp, 0, 100);}
+      if(cursurPos == 6 && cursurPosSelected){Kd_temp = Kd_temp-0.1; constrain(Kp_temp, 0, 100);}
       presseddown = false;
     }
   }
@@ -968,7 +993,7 @@ void displaySettings(){
   if (cursurPos == 3) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
   display.setCursor(4, 37);
   if (cursurPos < 4) display.print("HX711 scale");
-  if (cursurPos > 3 && cursurPos < 7){ //Tunung Temp PID
+  if (cursurPos > 3 && cursurPos < 8){ //Tunung Temp PID
     display.setTextSize(1);
     display.setCursor(4, 4);
     display.setTextColor(SH110X_WHITE);
@@ -998,7 +1023,7 @@ void displaySettings(){
     if (cursurPos == 7) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
     display.print("back");
   }
-  if (cursurPos == 7){ //Tunung Pressure PID
+  if (cursurPos == 8){ //Tunung Pressure PID
     
   }
   if (cursurPos == 10){ //Tunung Preinfusion pressure
