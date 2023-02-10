@@ -12,7 +12,11 @@
 Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 //Button flags
+#define ROTTARY_BUTTON 13
+#define ROTTARY_A      21
+#define ROTTARY_B      14
 bool pressedup, pressedmid1, pressedmid, longpressmid, presseddown;
+int ROTTARY_result = 0; 
 double presstime, pressmidtime;
 
 // EEPROM stored data
@@ -36,11 +40,6 @@ int targetpreinfusion = 10;   // in seconds
 float currentTemp;
 float currentWeight;
 float currentPressure;
-
-//Manual input
-#define ROTTARY_BUTTON 13
-#define ROTTARY_A      14
-#define ROTTARY_B      21
 
 // Mode management
 int mode = 4;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
@@ -94,7 +93,9 @@ void setup() {
 
   /*Initialize manual input*/
   presstime = millis();
-  attachInterrupt(digitalPinToInterrupt(6), pressup, FALLING);
+  // pinMode(ROTTARY_A, INPUT_PULLUP);
+  pinMode(ROTTARY_B, INPUT);
+  attachInterrupt(digitalPinToInterrupt(ROTTARY_A), rottaryevvent, FALLING);
   attachInterrupt(digitalPinToInterrupt(ROTTARY_BUTTON), pressmid, FALLING);
   
   /*Initialize dual core*/
@@ -123,13 +124,7 @@ void Core1code(void* pvParameters) {
 void loop() {
   // put nothing
 }
-void pressup() {
-  if (millis() - presstime > 350) {
-    pressedup = true;
-    presstime = millis();
-    pressmidtime = millis();
-  }
-}
+//---------------------------------------------------------------------------------------------//
 void pressmid() {
   if (millis() - presstime > 350) {
     pressedmid1 = true;
@@ -148,12 +143,31 @@ void longpresschecker(){
     presstime = millis(); 
   }
 }
+void rottaryevvent(){
+  // ROTTARY_B_state = digitalRead(ROTTARY_B);
+  if (millis() - presstime > 300) {
+    if (digitalRead(ROTTARY_B) == 0){
+      ROTTARY_result++;
+    }else{
+      ROTTARY_result--;
+    }
+    Serial.println(ROTTARY_result);
+    presstime = millis();
+  }
+}
+/*void pressup() {
+  if (millis() - presstime > 350) {
+    pressedup = true;
+    presstime = millis();
+    pressmidtime = millis();
+  }
+}
 void pressdown() {
   if (millis() - presstime > 350) {
     presseddown = true;
     presstime = millis();
   }
-}
+}*/
 //---------------------------------------------------------------------------------------------//
 static const unsigned char PROGMEM logo_bmp[] = {
   /* 0X00,0X01,0X32,0X00,0X3D,0X00, */
@@ -588,8 +602,7 @@ static const unsigned char PROGMEM logo_bmp[] = {
 void oled_initialize() {
   if (!display.begin(0x3c, true)) {  // Address 0x3C for 128x32
     Serial.println(F("SSD1306 allocation failed"));
-    for (;;)
-      ;  // Don't proceed, loop forever
+    // for (;;);  // Don't proceed, loop forever
   }
   display.clearDisplay();
   display.setTextSize(2.75);
@@ -785,27 +798,27 @@ void userinterface() {
   }
 }
 void serial_debug() {
-  Serial.print("Mode:");
-  Serial.print(mode);
-  Serial.print(" cursurPos:");
-  Serial.print(cursurPos);
-  Serial.print(" TargetTemp:");
-  Serial.print(targetTemp);
-  Serial.print(" CurrentTemp:");
-  Serial.println(currentTemp);
-  Serial.print(millis() - pressmidtime);
-  Serial.print(" pressedup:");
-  Serial.print(pressedup);
-  Serial.print(" pressedmid1:");
-  Serial.print(pressedmid1);
-  Serial.print(" pressedmid:");
-  Serial.print(pressedmid);
-  Serial.print(" longpressmid:");
-  Serial.print(longpressmid);
-  Serial.print(" presseddown:");
-  Serial.print(presseddown);
-  Serial.print(" cursurPosSelected:");
-  Serial.println(cursurPosSelected);
+  // Serial.print("Mode:");
+  // Serial.print(mode);
+  // Serial.print(" cursurPos:");
+  // Serial.print(cursurPos);
+  // Serial.print(" TargetTemp:");
+  // Serial.print(targetTemp);
+  // Serial.print(" CurrentTemp:");
+  // Serial.println(currentTemp);
+  // Serial.print(millis() - pressmidtime);
+  // Serial.print(" pressedup:");
+  // Serial.print(pressedup);
+  // Serial.print(" pressedmid1:");
+  // Serial.print(pressedmid1);
+  // Serial.print(" pressedmid:");
+  // Serial.print(pressedmid);
+  // Serial.print(" longpressmid:");
+  // Serial.print(longpressmid);
+  // Serial.print(" presseddown:");
+  // Serial.print(presseddown);
+  // Serial.print(" cursurPosSelected:");
+  // Serial.println(cursurPosSelected);
 }
 void displayStatuscolumn(){
   int BrewPos[2] = {8,56};
