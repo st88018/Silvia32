@@ -4,6 +4,9 @@
 #include <Adafruit_SH110X.h>
 //EEPROM library
 #include <EEPROM.h>
+//Encoder library
+#include "AiEsp32RotaryEncoder.h"
+
 
 // OLED-screen
 #define SCREEN_WIDTH 128
@@ -11,13 +14,16 @@
 #define OLED_RESET -1
 Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-//Button flags
-#define ROTTARY_BUTTON 13
-#define ROTTARY_A      21
-#define ROTTARY_B      14
-bool pressedup, pressedmid1, pressedmid, longpressmid, presseddown;
-int ROTTARY_result = 0; 
+//Encoder
+#define ROTARY_ENCODER_BUTTON_PIN 13
+#define ROTARY_ENCODER_A_PIN 14
+#define ROTARY_ENCODER_B_PIN 21
+bool pressedmid1, pressedmid, longpressmid, presseddown, pressedup;
 double presstime, pressmidtime;
+AiEsp32RotaryEncoder rotaryEncoder = AiEsp32RotaryEncoder(ROTARY_ENCODER_A_PIN, ROTARY_ENCODER_B_PIN, ROTARY_ENCODER_BUTTON_PIN, -1, 4);
+void IRAM_ATTR readEncoderISR(){
+	rotaryEncoder.readEncoder_ISR();
+}
 
 // EEPROM stored data
 int weightAddr = 0;
@@ -92,11 +98,12 @@ void setup() {
   Serial.print("EEPROM updated");
 
   /*Initialize manual input*/
-  presstime = millis();
-  // pinMode(ROTTARY_A, INPUT_PULLUP);
-  pinMode(ROTTARY_B, INPUT);
-  attachInterrupt(digitalPinToInterrupt(ROTTARY_A), rottaryevvent, FALLING);
-  attachInterrupt(digitalPinToInterrupt(ROTTARY_BUTTON), pressmid, FALLING);
+  attachInterrupt(digitalPinToInterrupt(ROTARY_ENCODER_BUTTON_PIN), pressmid, FALLING);
+  rotaryEncoder.begin();
+  rotaryEncoder.setup(readEncoderISR);
+  rotaryEncoder.setBoundaries(-1000, 1000, false);
+  rotaryEncoder.disableAcceleration();
+  
   
   /*Initialize dual core*/
   xTaskCreatePinnedToCore(Core0code, "Core0", 10000, NULL, 1, &Core0, 0);
@@ -106,7 +113,7 @@ void setup() {
 }
 void Core0code(void* pvParameters) {
   for (;;) {
-    serial_debug();
+    // serial_debug();
     delay(500);
   }
 }
@@ -115,6 +122,7 @@ void Core1code(void* pvParameters) {
     longpresschecker();
     if (millis() - code1timer > 50) {
       code1timer = millis();
+      rotary_loop();
       oled_display();
       userinterface();
       blinkcontroller();
@@ -132,7 +140,7 @@ void pressmid() {
   }
 }
 void longpresschecker(){
-  if(pressedmid1 && digitalRead(ROTTARY_BUTTON)){
+  if(pressedmid1 && digitalRead(ROTARY_ENCODER_BUTTON_PIN)){
     pressedmid = true;
     pressedmid1 = false;
     presstime = millis();
@@ -143,32 +151,16 @@ void longpresschecker(){
     presstime = millis(); 
   }
 }
-void rottaryevvent(){
-  // ROTTARY_B_state = digitalRead(ROTTARY_B);
-  if (millis() - presstime > 300) {
-    if (digitalRead(ROTTARY_B) == 0){
-      ROTTARY_result++;
-    }else{
-      ROTTARY_result--;
-    }
-    Serial.println(ROTTARY_result);
-    presstime = millis();
-  }
+void rotary_loop(){
+	//dont print anything unless value changed
+	if (rotaryEncoder.encoderChanged())
+	{
+		Serial.print("Value: ");
+		Serial.println(rotaryEncoder.readEncoder());
+	}
 }
-/*void pressup() {
-  if (millis() - presstime > 350) {
-    pressedup = true;
-    presstime = millis();
-    pressmidtime = millis();
-  }
-}
-void pressdown() {
-  if (millis() - presstime > 350) {
-    presseddown = true;
-    presstime = millis();
-  }
-}*/
 //---------------------------------------------------------------------------------------------//
+
 static const unsigned char PROGMEM logo_bmp[] = {
   /* 0X00,0X01,0X32,0X00,0X3D,0X00, */
   0X00,
