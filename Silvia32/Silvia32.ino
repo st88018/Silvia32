@@ -137,6 +137,7 @@ void pressmid() {
   if (millis() - presstime > 350) {
     pressedmid1 = true;
     pressmidtime = millis();
+    serial_debug();
   }
 }
 void longpresschecker(){
@@ -653,7 +654,7 @@ void oled_display() {
   }if(mode ==4){
     displaySettings();
   }
-  displayStatuscolumn();
+  displayModeColumn();
   display.display();
 }
 void userinterface() {
@@ -790,29 +791,19 @@ void userinterface() {
   }
 }
 void serial_debug() {
-  // Serial.print("Mode:");
-  // Serial.print(mode);
-  // Serial.print(" cursurPos:");
-  // Serial.print(cursurPos);
-  // Serial.print(" TargetTemp:");
-  // Serial.print(targetTemp);
-  // Serial.print(" CurrentTemp:");
-  // Serial.println(currentTemp);
-  // Serial.print(millis() - pressmidtime);
-  // Serial.print(" pressedup:");
-  // Serial.print(pressedup);
-  // Serial.print(" pressedmid1:");
-  // Serial.print(pressedmid1);
-  // Serial.print(" pressedmid:");
-  // Serial.print(pressedmid);
-  // Serial.print(" longpressmid:");
-  // Serial.print(longpressmid);
-  // Serial.print(" presseddown:");
-  // Serial.print(presseddown);
-  // Serial.print(" cursurPosSelected:");
-  // Serial.println(cursurPosSelected);
+  Serial.print("Mode:");
+  Serial.print(mode);
+  Serial.print(" cursurPos:");
+  Serial.print(cursurPos);
+  Serial.print(" TargetTemp:");
+  Serial.print(targetTemp);
+  Serial.print(" CurrentTemp:");
+  Serial.println(currentTemp);
+  Serial.print(presseddown);
+  Serial.print(" cursurPosSelected:");
+  Serial.println(cursurPosSelected);
 }
-void displayStatuscolumn(){
+void displayModeColumn(){
   int BrewPos[2] = {8,56};
   int cleanPos[2] = {41,56};
   int settingPos[2] = {80,56};
@@ -841,7 +832,7 @@ void displayStatuscolumn(){
     display.print("Brew");
     display.fillRect(32,55,2,9, SH110X_WHITE);
     display.fillTriangle(34,64, 34,55, 38,55, SH110X_WHITE);
-    displaybrewstate();
+    displayBrewState();
   }
   if(mode == 3){ //Clean
     display.setTextColor(SH110X_WHITE);
@@ -877,7 +868,7 @@ void displayStatuscolumn(){
     display.fillTriangle(123,64, 123,55, 127,55, SH110X_WHITE);
   }
 }
-void displaybrewstate() {  //0 to 1
+void displayBrewState() {  //0 to 1
   display.drawLine(34,63, 123,63, SH110X_WHITE);
   display.drawLine(123,64, 128,55, SH110X_WHITE);
   int i;
