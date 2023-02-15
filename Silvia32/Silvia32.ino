@@ -6,6 +6,8 @@
 #include <EEPROM.h>
 //Encoder library
 #include "AiEsp32RotaryEncoder.h"
+//Thermocouple libraty
+#include "max6675.h"
 
 
 // OLED-screen
@@ -13,6 +15,9 @@
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
 Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+//Thermocouple
+MAX6675 thermocouple(10, 11, 12);
 
 //Encoder
 #define ROTARY_ENCODER_BUTTON_PIN 13
@@ -115,6 +120,7 @@ void Core0code(void* pvParameters) {
   for (;;) {
     // serial_debug();
     delay(500);
+    read_sensors();
   }
 }
 void Core1code(void* pvParameters) {
@@ -908,7 +914,12 @@ void displayTemp() {
   display.print(")");
   display.setCursor(15, 12);
   display.setTextSize(2);
-  display.print(currentTemp,1);
+  if(currentTemp<100){
+    display.print(currentTemp,1);
+  }else{
+    display.print(currentTemp,0);
+  }
+  
 }
 void displayPress() {
   display.drawRect(0, 28, 64, 28, SH110X_WHITE);
@@ -1067,6 +1078,9 @@ double Pressure_controller(double targetPressure, double currentPressure,double 
   Pressure_last_error = error;
   double output = error*Kp_pressure+Pressure_Integral*Ki_pressure+Pressurederivative*Kd_pressure;
   return(output);
+}
+void read_sensors(){
+  currentTemp = thermocouple.readCelsius();
 }
 void PCA9685_output(){
   //Temperature SSR
