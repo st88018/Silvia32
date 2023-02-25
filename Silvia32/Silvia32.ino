@@ -160,6 +160,11 @@ void longpresschecker(){
     presstime = millis(); 
   }
 }
+long readandclearEncoder(){
+  long encoderReading = rotaryEncoder.readEncoder();
+  rotaryEncoder.setEncoderValue(0);
+  return encoderReading;
+}
 //---------------------------------------------------------------------------------------------//
 static const unsigned char PROGMEM logo_bmp[] = {
   /* 0X00,0X01,0X32,0X00,0X3D,0X00, */
@@ -659,8 +664,7 @@ void userinterface() {
   if (mode == 0) {
     if (rotaryEncoder.encoderChanged())
 	  {
-      targetTemp += rotaryEncoder.readEncoder();
-      rotaryEncoder.setEncoderValue(0);
+      targetTemp += readandclearEncoder();
     }
     if (pressedmid) {
       pressedmid = false;
@@ -691,17 +695,16 @@ void userinterface() {
     }
     if (rotaryEncoder.encoderChanged()){
       if(cursurPosSelected){
-        if(cursurPos == 1) targetTemp += rotaryEncoder.readEncoder();
-        if(cursurPos == 2) targetWeight += rotaryEncoder.readEncoder();
-        if(cursurPos == 3) targetpreinfusion += rotaryEncoder.readEncoder();
+        if(cursurPos == 1) targetTemp += readandclearEncoder();
+        if(cursurPos == 2) targetWeight += readandclearEncoder();
+        if(cursurPos == 3) targetpreinfusion += readandclearEncoder();
       }else{
-        cursurPos += rotaryEncoder.readEncoder();
+        cursurPos += readandclearEncoder();
         cursurPos = constrain(cursurPos, 1,3);
       }
       Serial.print("cursurPos");Serial.println(cursurPos);
       Serial.print("cursurPosSelected");Serial.println(cursurPosSelected);
       presstime = millis();
-      rotaryEncoder.setEncoderValue(0);
     }
     if (millis() - presstime > 10000){ //stop selecting while not using
       cursurPos = 0;
@@ -747,37 +750,37 @@ void userinterface() {
     }
     if (rotaryEncoder.encoderChanged()){
       if(cursurPosSelected){
-        if(cursurPos == 4){Kp_temp += rotaryEncoder.readEncoder()*0.1;rotaryEncoder.setEncoderValue(0);}
-        if(cursurPos == 5){Ki_temp += rotaryEncoder.readEncoder()*0.1;rotaryEncoder.setEncoderValue(0);}
-        if(cursurPos == 6){Kd_temp += rotaryEncoder.readEncoder()*0.1;rotaryEncoder.setEncoderValue(0);}
-        if(cursurPos == 8){Kp_pressure += rotaryEncoder.readEncoder()*0.1;rotaryEncoder.setEncoderValue(0);}
-        if(cursurPos == 9){Ki_pressure += rotaryEncoder.readEncoder()*0.1;rotaryEncoder.setEncoderValue(0);}
-        if(cursurPos == 10){Kd_pressure += rotaryEncoder.readEncoder()*0.1;rotaryEncoder.setEncoderValue(0);}
+        if(cursurPos == 4){Kp_temp += readandclearEncoder()*0.1; }
+        if(cursurPos == 5){Ki_temp += readandclearEncoder()*0.1; }
+        if(cursurPos == 6){Kd_temp += readandclearEncoder()*0.1; }
+        if(cursurPos == 8){Kp_pressure += readandclearEncoder()*0.1; }
+        if(cursurPos == 9){Ki_pressure += readandclearEncoder()*0.1; }
+        if(cursurPos == 10){Kd_pressure += readandclearEncoder()*0.1; }
       }else{
         if(cursurPos < 4){ //Main menu
-          cursurPos += rotaryEncoder.readEncoder();
+          cursurPos += readandclearEncoder();
           cursurPos = constrain(cursurPos,0,3);
         }
         if(cursurPos > 3 && cursurPos < 8){ //TEMP PID
-          cursurPos += rotaryEncoder.readEncoder();
+          cursurPos += readandclearEncoder();
           cursurPos = constrain(cursurPos,4,7);
         }
         if(cursurPos > 7 && cursurPos < 12){ //PRESS PID
-          cursurPos += rotaryEncoder.readEncoder();
+          cursurPos += readandclearEncoder();
           cursurPos = constrain(cursurPos,8,11);
         }
         if(cursurPos > 11 && cursurPos < 14){ //Preinfusion
-          cursurPos += rotaryEncoder.readEncoder();
+          cursurPos += readandclearEncoder();
           cursurPos = constrain(cursurPos,12,13);
         }
         if(cursurPos > 13 && cursurPos < 16){ //HX711
-          cursurPos += rotaryEncoder.readEncoder();
+          cursurPos += readandclearEncoder();
           cursurPos = constrain(cursurPos,14,15);
         }
       }
       Serial.print("cursurPos: ");Serial.println(cursurPos);
       Serial.print("cursurPosSelected: ");Serial.println(cursurPosSelected);
-      rotaryEncoder.setEncoderValue(0);
+       
     }
   }
 }
