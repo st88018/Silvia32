@@ -89,7 +89,7 @@ void setup() {
 
   /*collect eeprom data*/
   EEPROM.begin(128);
-  saveParameters();
+  // saveParameters();
   targetTemp = EEPROM.read(tempAddr);
   targetWeight = EEPROM.read(weightAddr);
   targetpressure = EEPROM.read(pressureAddr);
@@ -128,7 +128,6 @@ void Core1code(void* pvParameters) {
     longpresschecker();
     if (millis() - code1timer > 50) {
       code1timer = millis();
-      rotary_loop();
       oled_display();
       userinterface();
       blinkcontroller();
@@ -157,14 +156,6 @@ void longpresschecker(){
     pressedmid1 = false;
     presstime = millis(); 
   }
-}
-void rotary_loop(){
-	//dont print anything unless value changed
-	if (rotaryEncoder.encoderChanged())
-	{
-		Serial.print("Value: ");
-		Serial.println(rotaryEncoder.readEncoder());
-	}
 }
 //---------------------------------------------------------------------------------------------//
 
@@ -641,8 +632,7 @@ void oled_display() {
     displayPress();
     displayWeight();
     displayPreinfusion();
-  }
-  if(mode == 2){
+  }if(mode == 2){
     displayTemp();
     displayPress();
     displayWeight();
@@ -665,13 +655,10 @@ void oled_display() {
 }
 void userinterface() {
   if (mode == 0) {
-    if (pressedup) {
-      pressedup = false;
-      targetTemp++;
-    }
-    if (presseddown) {
-      presseddown = false;
-      targetTemp--;
+    if (rotaryEncoder.encoderChanged())
+	  {
+      targetTemp += rotaryEncoder.readEncoder();
+      rotaryEncoder.setEncoderValue(0);
     }
     if (pressedmid) {
       pressedmid = false;
@@ -679,15 +666,20 @@ void userinterface() {
       EEPROM.commit();
       Serial.println("TempSaved");
     }
+    if(longpressmid){
+      mode = 1;
+      cursurPos = 0;
+      pressedmid = false;
+      longpressmid = false;
+      saveParameters();
+    }
   }
   if (mode == 1){
     if(longpressmid){
       mode = 3;
       cursurPos = 0;
       longpressmid = false;
-      pressedup = false;
       pressedmid = false;
-      presseddown = false;
       cursurPos = 0;
       saveParameters();
     }
@@ -695,42 +687,23 @@ void userinterface() {
       pressedmid = false;
       if(cursurPos != 0) cursurPosSelected = !cursurPosSelected;
     }
-    if( pressedup && cursurPosSelected){
-      if(cursurPos == 1) targetTemp++;
-      if(cursurPos == 2) targetWeight++;
-      if(cursurPos == 3) targetpreinfusion++;
-      pressedup = false;
-    }
-    if(pressedup){
-      if(cursurPos == 0){
-        cursurPos = 3;
+    if (rotaryEncoder.encoderChanged()){
+      if(cursurPosSelected){
+        if(cursurPos == 1) targetTemp += rotaryEncoder.readEncoder();
+        if(cursurPos == 2) targetWeight += rotaryEncoder.readEncoder();
+        if(cursurPos == 3) targetpreinfusion += rotaryEncoder.readEncoder();
       }else{
-        cursurPos--;
+        cursurPos += rotaryEncoder.readEncoder();
+        cursurPos = constrain(cursurPos, 1,3);
       }
-      if(cursurPos == 0) cursurPos = 3;
-      pressedup = false;      
+      Serial.print("cursurPos");Serial.println(cursurPos);
+      Serial.print("cursurPosSelected");Serial.println(cursurPosSelected);
+      presstime = millis();
+      rotaryEncoder.setEncoderValue(0);
     }
     if (millis() - presstime > 10000){ //stop selecting while not using
       cursurPos = 0;
-      saveParameters();
-    }
-    if( presseddown && cursurPosSelected){
-      if(cursurPos == 1) targetTemp--;
-      if(cursurPos == 2) targetWeight--;
-      if(cursurPos == 3) targetpreinfusion--;
-      presseddown = false;
-    }
-    if(presseddown){
-      if(cursurPos == 0){
-        cursurPos = 1;
-      }else{
-        cursurPos++;
-      }
-      if(cursurPos == 4) cursurPos = 1;
-      presseddown = false;      
-    }
-    if (millis() - presstime > 10000){ //stop selecting while not using
-      cursurPos = 0;
+      cursurPosSelected = false;
       saveParameters();
     }
   }
@@ -753,46 +726,56 @@ void userinterface() {
       pressedmid = false;
       presseddown = false;
     }
-    if(pressedmid && cursurPos < 4){
+    if(pressedmid){
       pressedmid = false;
-      if(cursurPos == 0){ cursurPos = 4; cursurPosSelected = false;} // Temp P,I,D
-      if(cursurPos == 1){ cursurPos = 8; cursurPosSelected = false;} // Pressure P,I,D
-      if(cursurPos == 2){ cursurPos = 10; cursurPosSelected = false;} // Preinfusion pressure
-      if(cursurPos == 3){ cursurPos = 11; cursurPosSelected = false;} // HX711 scale
-      cursurPosSelected = false;
-    }
-    if(pressedmid && cursurPos > 3){
-      pressedmid = false;
+
       if(cursurPos > 3 && cursurPos < 7) cursurPosSelected = !cursurPosSelected;
-      if(cursurPos == 7){ cursurPos = 0; cursurPosSelected = false;}
+      if(cursurPos > 7 && cursurPos < 11) cursurPosSelected = !cursurPosSelected;
+      if(cursurPos == 12) cursurPosSelected = !cursurPosSelected;
+      if(cursurPos == 14) cursurPosSelected = !cursurPosSelected;
+
+      if(cursurPos == 0){ cursurPos = 4; cursurPosSelected = false;}  // Temp P,I,D 
+      if(cursurPos == 1){ cursurPos = 8; cursurPosSelected = false;}  // Pressure P,I,D
+      if(cursurPos == 2){ cursurPos = 12; cursurPosSelected = false;} // Preinfusion pressure
+      if(cursurPos == 3){ cursurPos = 14; cursurPosSelected = false;} // HX711 scale
+      if(cursurPos == 7){ cursurPos = 0; cursurPosSelected = false; saveParameters();}  // Temp beck
+      if(cursurPos == 11){ cursurPos = 0; cursurPosSelected = false; saveParameters();} // Press back
+      if(cursurPos == 13){ cursurPos = 0; cursurPosSelected = false; saveParameters();} // Preinfusion back
+      if(cursurPos == 15){ cursurPos = 0; cursurPosSelected = false; saveParameters();} // HX711 back
     }
-    if(pressedup){
-      if(cursurPos < 4){
-        cursurPos--;
-        constrain(cursurPos,0,3);
+    if (rotaryEncoder.encoderChanged()){
+      if(cursurPosSelected){
+        if(cursurPos == 4){Kp_temp += rotaryEncoder.readEncoder()*0.1;rotaryEncoder.setEncoderValue(0);}
+        if(cursurPos == 5){Ki_temp += rotaryEncoder.readEncoder()*0.1;rotaryEncoder.setEncoderValue(0);}
+        if(cursurPos == 6){Kd_temp += rotaryEncoder.readEncoder()*0.1;rotaryEncoder.setEncoderValue(0);}
+        if(cursurPos == 8){Kp_pressure += rotaryEncoder.readEncoder()*0.1;rotaryEncoder.setEncoderValue(0);}
+        if(cursurPos == 9){Ki_pressure += rotaryEncoder.readEncoder()*0.1;rotaryEncoder.setEncoderValue(0);}
+        if(cursurPos == 10){Kd_pressure += rotaryEncoder.readEncoder()*0.1;rotaryEncoder.setEncoderValue(0);}
+      }else{
+        if(cursurPos < 4){ //Main menu
+          cursurPos += rotaryEncoder.readEncoder();
+          cursurPos = constrain(cursurPos,0,3);
         }
-      if(cursurPos > 3 && cursurPos < 7 && !cursurPosSelected){
-        cursurPos--;
-        constrain(cursurPos,4,6);
-      } 
-      if(cursurPos == 4 && cursurPosSelected){Kp_temp = Kp_temp+0.1; constrain(Kp_temp, 0, 100);}
-      if(cursurPos == 5 && cursurPosSelected){Ki_temp = Ki_temp+0.1; constrain(Kp_temp, 0, 100);}
-      if(cursurPos == 6 && cursurPosSelected){Kd_temp = Kd_temp+0.1; constrain(Kp_temp, 0, 100);}
-      pressedup = false;
-    }
-    if(presseddown){
-      if(cursurPos < 4){
-        cursurPos++;
-        constrain(cursurPos,0,3);
+        if(cursurPos > 3 && cursurPos < 8){ //TEMP PID
+          cursurPos += rotaryEncoder.readEncoder();
+          cursurPos = constrain(cursurPos,4,7);
         }
-      if(cursurPos > 3 && cursurPos < 7 && !cursurPosSelected){
-        cursurPos++;
-        constrain(cursurPos,4,6);
+        if(cursurPos > 7 && cursurPos < 12){ //PRESS PID
+          cursurPos += rotaryEncoder.readEncoder();
+          cursurPos = constrain(cursurPos,8,11);
+        }
+        if(cursurPos > 11 && cursurPos < 14){ //Preinfusion
+          cursurPos += rotaryEncoder.readEncoder();
+          cursurPos = constrain(cursurPos,12,13);
+        }
+        if(cursurPos > 13 && cursurPos < 16){ //HX711
+          cursurPos += rotaryEncoder.readEncoder();
+          cursurPos = constrain(cursurPos,14,15);
+        }
       }
-      if(cursurPos == 4 && cursurPosSelected){Kp_temp = Kp_temp-0.1; constrain(Kp_temp, 0, 100);}
-      if(cursurPos == 5 && cursurPosSelected){Ki_temp = Ki_temp-0.1; constrain(Kp_temp, 0, 100);}
-      if(cursurPos == 6 && cursurPosSelected){Kd_temp = Kd_temp-0.1; constrain(Kp_temp, 0, 100);}
-      presseddown = false;
+      Serial.print("cursurPos: ");Serial.println(cursurPos);
+      Serial.print("cursurPosSelected: ");Serial.println(cursurPosSelected);
+      rotaryEncoder.setEncoderValue(0);
     }
   }
 }
@@ -1015,29 +998,92 @@ void displaySettings(){
     display.setTextSize(1);
     display.setCursor(20, 30);
     display.setTextColor(SH110X_WHITE);
-    if (cursurPos == 4) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    if (cursurPos == 4){
+      if(cursurPosSelected && !blinkstate){
+      }else{
+        display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+      }
+    }
     display.print(Kp_temp,1);
     display.setCursor(60, 30);
     display.setTextColor(SH110X_WHITE);
-    if (cursurPos == 5) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    if (cursurPos == 5){
+      if(cursurPosSelected && !blinkstate){
+      }else{
+        display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+      }
+    }
     display.print(Ki_temp,1);
     display.setCursor(100, 30);
     display.setTextColor(SH110X_WHITE);
-    if (cursurPos == 6) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    if (cursurPos == 6){
+      if(cursurPosSelected && !blinkstate){
+      }else{
+        display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+      }
+    }
     display.print(Kd_temp,1);
     display.setCursor(102, 45);
     display.setTextColor(SH110X_WHITE);
     if (cursurPos == 7) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
     display.print("back");
   }
-  if (cursurPos == 8){ //Tunung Pressure PID
-    
+  if (cursurPos > 7 && cursurPos < 12){ //Tunung Pressure PID
+    display.setTextSize(1);
+    display.setCursor(4, 4);
+    display.setTextColor(SH110X_WHITE);
+    display.print("Pressure PID");
+    display.setTextSize(2);
+    display.setCursor(5, 25);
+    display.print("P");
+    display.setCursor(45, 25);
+    display.print("I");
+    display.setCursor(85, 25);
+    display.print("D");
+    display.setTextSize(1);
+    display.setCursor(20, 30);
+    display.setTextColor(SH110X_WHITE);
+    if (cursurPos == 8){
+      if(cursurPosSelected && !blinkstate){
+      }else{
+        display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+      }
+    }
+    display.print(Kp_temp,1);
+    display.setCursor(60, 30);
+    display.setTextColor(SH110X_WHITE);
+    if (cursurPos == 9){
+      if(cursurPosSelected && !blinkstate){
+      }else{
+        display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+      }
+    }
+    display.print(Ki_temp,1);
+    display.setCursor(100, 30);
+    display.setTextColor(SH110X_WHITE);
+    if (cursurPos == 10){
+      if(cursurPosSelected && !blinkstate){
+      }else{
+        display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+      }
+    }
+    display.print(Kd_temp,1);
+    display.setCursor(102, 45);
+    display.setTextColor(SH110X_WHITE);
+    if (cursurPos == 11) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    display.print("back");
   }
-  if (cursurPos == 10){ //Tunung Preinfusion pressure
-    
+  if (cursurPos > 11 && cursurPos < 13){ //Tunung Preinfusion pressure
+    display.setCursor(102, 45);
+    display.setTextColor(SH110X_WHITE);
+    if (cursurPos == 12) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    display.print("back");
   }
-  if (cursurPos == 11){ //Tunung HX711
-    
+  if (cursurPos > 13 && cursurPos < 15){ //Tunung HX711
+    display.setCursor(102, 45);
+    display.setTextColor(SH110X_WHITE);
+    if (cursurPos == 14) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    display.print("back");
   }
 }
 void blinkcontroller(){
