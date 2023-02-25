@@ -71,6 +71,9 @@ float Kp_pressure = 10;
 float Ki_pressure = 0;
 float Kd_pressure = 0;
 
+float SSR_controller_cycle = 5000; // in millis
+float SSR_controller_timer;
+
 //Blink
 int blinkcounter = 0;
 bool blinkstate = 0;
@@ -158,7 +161,6 @@ void longpresschecker(){
   }
 }
 //---------------------------------------------------------------------------------------------//
-
 static const unsigned char PROGMEM logo_bmp[] = {
   /* 0X00,0X01,0X32,0X00,0X3D,0X00, */
   0X00,
@@ -1073,16 +1075,22 @@ void displaySettings(){
     if (cursurPos == 11) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
     display.print("back");
   }
-  if (cursurPos > 11 && cursurPos < 13){ //Tunung Preinfusion pressure
+  if (cursurPos > 11 && cursurPos < 14){ //Tunung Preinfusion pressure
+    display.setTextSize(1);
+    display.setCursor(4, 4);
+    display.setTextColor(SH110X_WHITE);
+    display.print("Preinfusion pressure");
+    display.setCursor(45, 25);
+    display.print("Bar");
     display.setCursor(102, 45);
     display.setTextColor(SH110X_WHITE);
-    if (cursurPos == 12) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    if (cursurPos == 13) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
     display.print("back");
   }
-  if (cursurPos > 13 && cursurPos < 15){ //Tunung HX711
+  if (cursurPos > 13 && cursurPos < 16){ //Tunung HX711
     display.setCursor(102, 45);
     display.setTextColor(SH110X_WHITE);
-    if (cursurPos == 14) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
+    if (cursurPos == 15) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
     display.print("back");
   }
 }
