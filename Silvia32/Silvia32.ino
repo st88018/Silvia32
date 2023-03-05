@@ -9,11 +9,10 @@
 //Thermocouple libraty
 #include "max6675.h"
 //ADC
-#include "ADS1X15.h"
+#include <DFRobot_ADS1115.h>
 
-ADS1115 ADS(0x48);
+DFRobot_ADS1115 ads(&Wire);
 int ADC_val0,ADC_val1,ADC_val2,ADC_val3;
-float ADS_scale;
 
 
 // OLED-screen
@@ -119,9 +118,12 @@ void setup() {
   rotaryEncoder.disableAcceleration();
 
   /*Initailize Sensors*/
-  ADS.begin();
-  ADS.setGain(0);
-  ADS_scale = ADS.toVoltage(1);
+  ads.setAddr_ADS1115(ADS1115_IIC_ADDRESS1);   // 0x48
+  ads.setGain(eGAIN_TWOTHIRDS);   // 2/3x gain
+  ads.setMode(eMODE_SINGLE);       // single-shot mode
+  ads.setRate(eRATE_128);          // 128SPS (default)
+  ads.setOSMode(eOSMODE_SINGLE);   // Set to start a single-conversion
+  ads.init();
   
   /*Initialize dual core*/
   xTaskCreatePinnedToCore(Core0code, "Core0", 10000, NULL, 1, &Core0, 0);
@@ -134,7 +136,6 @@ void Core0code(void* pvParameters) {
     // serial_debug();
     delay(500);
     read_sensors();
-    
   }
 }
 void Core1code(void* pvParameters) {
@@ -798,8 +799,6 @@ void userinterface() {
 void serial_debug() {
   Serial.print("Mode:");
   Serial.print(mode);
-  Serial.print(" ADC_0:");
-  Serial.print(ADS_scale*ADC_val0);
   Serial.print(" cursurPos:");
   Serial.print(cursurPos);
   Serial.print(" TargetTemp:");
@@ -1162,8 +1161,11 @@ void PCA9685_output(){
   
 }
 void ADS1115_input(){
-  ADC_val0 =  ADS.readADC(0);  
-  ADC_val1 =  ADS.readADC(1);  
-  ADC_val2 =  ADS.readADC(2);  
-  ADC_val3 =  ADS.readADC(3);  
+  if (ads.checkADS1115())
+    {
+        ADC_val0 = ads.readVoltage(0);
+        ADC_val1 = ads.readVoltage(1);
+        ADC_val2 = ads.readVoltage(2);
+        ADC_val3 = ads.readVoltage(3);
+    }
 }
