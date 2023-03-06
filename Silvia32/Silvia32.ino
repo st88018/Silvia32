@@ -8,6 +8,12 @@
 #include "AiEsp32RotaryEncoder.h"
 //Thermocouple libraty
 #include "max6675.h"
+//ADC
+#include "ADS1X15.h"
+
+ADS1115 ADS(0x48);
+int ADC_val0,ADC_val1,ADC_val2,ADC_val3;
+float ADS_scale;
 
 
 // OLED-screen
@@ -111,7 +117,11 @@ void setup() {
   rotaryEncoder.setup(readEncoderISR);
   rotaryEncoder.setBoundaries(-1000, 1000, false);
   rotaryEncoder.disableAcceleration();
-  
+
+  /*Initailize Sensors*/
+  ADS.begin();
+  ADS.setGain(0);
+  ADS_scale = ADS.toVoltage(1);
   
   /*Initialize dual core*/
   xTaskCreatePinnedToCore(Core0code, "Core0", 10000, NULL, 1, &Core0, 0);
@@ -124,6 +134,7 @@ void Core0code(void* pvParameters) {
     // serial_debug();
     delay(500);
     read_sensors();
+    
   }
 }
 void Core1code(void* pvParameters) {
@@ -787,6 +798,8 @@ void userinterface() {
 void serial_debug() {
   Serial.print("Mode:");
   Serial.print(mode);
+  Serial.print(" ADC_0:");
+  Serial.print(ADS_scale*ADC_val0);
   Serial.print(" cursurPos:");
   Serial.print(cursurPos);
   Serial.print(" TargetTemp:");
@@ -1138,6 +1151,7 @@ double Pressure_controller(double targetPressure, double currentPressure,double 
 }
 void read_sensors(){
   currentTemp = thermocouple.readCelsius();
+  ADS1115_input();
 }
 void PCA9685_output(){
   //Temperature SSR
@@ -1148,5 +1162,8 @@ void PCA9685_output(){
   
 }
 void ADS1115_input(){
-
+  ADC_val0 =  ADS.readADC(0);  
+  ADC_val1 =  ADS.readADC(1);  
+  ADC_val2 =  ADS.readADC(2);  
+  ADC_val3 =  ADS.readADC(3);  
 }
