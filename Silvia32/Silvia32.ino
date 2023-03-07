@@ -10,10 +10,13 @@
 #include "max6675.h"
 //ADC
 #include <DFRobot_ADS1115.h>
+//PCA9685
+#include <Adafruit_PWMServoDriver.h>
 
 DFRobot_ADS1115 ads(&Wire);
 int ADC_val0,ADC_val1,ADC_val2,ADC_val3;
 
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x55);
 
 // OLED-screen
 #define SCREEN_WIDTH 128
@@ -124,6 +127,10 @@ void setup() {
   ads.setRate(eRATE_128);          // 128SPS (default)
   ads.setOSMode(eOSMODE_SINGLE);   // Set to start a single-conversion
   ads.init();
+
+  /*Initailize SSRoutput*/
+  pwm.begin();
+  pwm.setPWMFreq(1000);
   
   /*Initialize dual core*/
   xTaskCreatePinnedToCore(Core0code, "Core0", 10000, NULL, 1, &Core0, 0);
@@ -136,6 +143,12 @@ void Core0code(void* pvParameters) {
     // serial_debug();
     delay(500);
     read_sensors();
+
+    for (uint8_t pin=0; pin<16; pin++) {
+    pwm.setPWM(pin, 4096, 0);       // turns pin fully on
+    delay(100);
+    pwm.setPWM(pin, 0, 4096);       // turns pin fully off
+    }
   }
 }
 void Core1code(void* pvParameters) {
@@ -792,7 +805,6 @@ void userinterface() {
       }
       Serial.print("cursurPos: ");Serial.println(cursurPos);
       Serial.print("cursurPosSelected: ");Serial.println(cursurPosSelected);
-       
     }
   }
 }
@@ -1153,11 +1165,6 @@ void read_sensors(){
   ADS1115_input();
 }
 void PCA9685_output(){
-  //Temperature SSR
-
-  //Solenoid SSR
-
-  //Pressure dimmer
   
 }
 void ADS1115_input(){
