@@ -137,18 +137,16 @@ void setup() {
   delay(500);
   xTaskCreatePinnedToCore(Core1code, "Core1", 10000, NULL, 1, &Core1, 1);
   delay(500);
+
+  ADC_val2 = ads.readVoltage(2);
+  Serial.print("ADC_val2");Serial.println(ADC_val2);
 }
 void Core0code(void* pvParameters) {
   for (;;) {
     // serial_debug();
     delay(500);
     read_sensors();
-
-    for (uint8_t pin=0; pin<16; pin++) {
-    pwm.setPWM(pin, 4096, 0);       // turns pin fully on
-    delay(100);
-    pwm.setPWM(pin, 0, 4096);       // turns pin fully off
-    }
+    PCA9685_output();
   }
 }
 void Core1code(void* pvParameters) {
@@ -1165,7 +1163,12 @@ void read_sensors(){
   ADS1115_input();
 }
 void PCA9685_output(){
-  
+  if(ADC_val2>0){
+    pwm.setPWM(0, 4096, 0);       // turns pin fully on
+    Serial.println("Hi");
+  }else{
+    pwm.setPWM(0, 0, 4096);       // turns pin fully off
+  }
 }
 void ADS1115_input(){
   if (ads.checkADS1115())
