@@ -9,12 +9,14 @@
 //Thermocouple libraty
 #include "max6675.h"
 //ADC
-#include <DFRobot_ADS1115.h>
+#include <Adafruit_ADS1X15.h>
 //PCA9685
 #include <Adafruit_PWMServoDriver.h>
 
-DFRobot_ADS1115 ads(&Wire);
+//Adafruit_ADS1115 ads;
+Adafruit_ADS1015 ads;
 int ADC_val0,ADC_val1,ADC_val2,ADC_val3;
+// "ADC Range: +/- 6.144V (1 bit = 3mV/ADS1015, 0.1875mV/ADS1115)"
 
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x55);
 
@@ -121,12 +123,10 @@ void setup() {
   rotaryEncoder.disableAcceleration();
 
   /*Initailize Sensors*/
-  ads.setAddr_ADS1115(ADS1115_IIC_ADDRESS1);   // 0x48
-  ads.setGain(eGAIN_TWOTHIRDS);   // 2/3x gain
-  ads.setMode(eMODE_SINGLE);       // single-shot mode
-  ads.setRate(eRATE_128);          // 128SPS (default)
-  ads.setOSMode(eOSMODE_SINGLE);   // Set to start a single-conversion
-  ads.init();
+  if (!ads.begin()) {
+    Serial.println("Failed to initialize ADS.");
+    while (1);
+  }
 
   /*Initailize SSRoutput*/
   pwm.begin();
@@ -137,9 +137,6 @@ void setup() {
   delay(500);
   xTaskCreatePinnedToCore(Core1code, "Core1", 10000, NULL, 1, &Core1, 1);
   delay(500);
-
-  ADC_val2 = ads.readVoltage(2);
-  Serial.print("ADC_val2");Serial.println(ADC_val2);
 }
 void Core0code(void* pvParameters) {
   for (;;) {
@@ -1161,21 +1158,15 @@ double Pressure_controller(double targetPressure, double currentPressure,double 
 void read_sensors(){
   currentTemp = thermocouple.readCelsius();
   ADS1115_input();
+  PCA9685_output();
 }
 void PCA9685_output(){
-  if(ADC_val2>0){
-    pwm.setPWM(0, 4096, 0);       // turns pin fully on
-    Serial.println("Hi");
-  }else{
-    pwm.setPWM(0, 0, 4096);       // turns pin fully off
-  }
+  //0:SSR1 1:SSR2 2:DIMMER
+  
 }
 void ADS1115_input(){
-  if (ads.checkADS1115())
-    {
-        ADC_val0 = ads.readVoltage(0);
-        ADC_val1 = ads.readVoltage(1);
-        ADC_val2 = ads.readVoltage(2);
-        ADC_val3 = ads.readVoltage(3);
-    }
+  ADC_val0 = ads.computeVolts(ads.readADC_SingleEnded(0));
+  ADC_val1 = ads.computeVolts(ads.readADC_SingleEnded(1));
+  ADC_val2 = ads.computeVolts(ads.readADC_SingleEnded(2));
+  ADC_val3 = ads.computeVolts(ads.readADC_SingleEnded(3));
 }
