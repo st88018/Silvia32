@@ -15,7 +15,7 @@
 
 //Adafruit_ADS1115 ads;
 Adafruit_ADS1015 ads;
-int ADC_val0,ADC_val1,ADC_val2,ADC_val3;
+float ADC_val0,ADC_val1,ADC_val2,ADC_val3;
 // "ADC Range: +/- 6.144V (1 bit = 3mV/ADS1015, 0.1875mV/ADS1115)"
 
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x55);
@@ -28,6 +28,9 @@ Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, 
 
 //Thermocouple
 MAX6675 thermocouple(10, 11, 12);
+
+//Flow sensor
+int flow_counter;
 
 //Encoder
 #define ROTARY_ENCODER_BUTTON_PIN 13
@@ -63,7 +66,7 @@ float currentWeight;
 float currentPressure;
 
 // Mode management
-int mode = 4;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
+int mode = 5;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
 int cursurPos = 0;
 bool cursurPosSelected = false;
 
@@ -127,6 +130,7 @@ void setup() {
     Serial.println("Failed to initialize ADS.");
     while (1);
   }
+  // attachInterrupt(digitalPinToInterrupt(48), flowsensing, CHANGE);
 
   /*Initailize SSRoutput*/
   pwm.begin();
@@ -676,7 +680,10 @@ void oled_display() {
     display.print(cleancount);
   }if(mode ==4){
     displaySettings();
+  }if(mode == 5){ //debug 
+    displaydebug();
   }
+
   displayModeColumn();
   display.display();
 }
@@ -1116,6 +1123,20 @@ void displaySettings(){
     display.print("back");
   }
 }
+void displaydebug(){
+  display.setTextSize(1);
+  display.setTextColor(SH110X_WHITE);
+  display.setCursor(0, 0);
+  display.println("ADC: ");
+  display.print(ADC_val0,2);display.print(",");
+  display.print(ADC_val1,2);display.print(",");
+  display.print(ADC_val2,2);display.print(",");
+  display.println(ADC_val3,2);display.println("");
+  display.print("Pressure: ");display.print(pressure_calc(ADC_val0),2);display.println(" bar");
+  display.print("Flow: ");display.print(flow_counter);display.print(" ");display.print(analogRead(48),2);
+  display.setCursor(5, 20);
+
+}
 void blinkcontroller(){
   if (blinkcounter<5) {
     blinkcounter++;
@@ -1160,6 +1181,9 @@ void read_sensors(){
   ADS1115_input();
   PCA9685_output();
 }
+void flowsensing(){
+  flow_counter++;
+}
 void PCA9685_output(){
   //0:SSR1 1:SSR2 2:DIMMER
   
@@ -1169,4 +1193,8 @@ void ADS1115_input(){
   ADC_val1 = ads.computeVolts(ads.readADC_SingleEnded(1));
   ADC_val2 = ads.computeVolts(ads.readADC_SingleEnded(2));
   ADC_val3 = ads.computeVolts(ads.readADC_SingleEnded(3));
+}
+float pressure_calc(float ADC_reading){ //0.52~3.26 0~12Bar
+  float output = (ADC_reading-0.52)*3.9216;
+  return (output);
 }
