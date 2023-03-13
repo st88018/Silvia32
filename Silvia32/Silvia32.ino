@@ -30,6 +30,7 @@ Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, 
 MAX6675 thermocouple(10, 11, 12);
 
 //Flow sensor
+#define FLOW_SENSOR_PIN 45
 int flow_counter;
 
 //Encoder
@@ -130,7 +131,7 @@ void setup() {
     Serial.println("Failed to initialize ADS.");
     while (1);
   }
-  // attachInterrupt(digitalPinToInterrupt(48), flowsensing, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR_PIN), flowsensing, CHANGE);
 
   /*Initailize SSRoutput*/
   pwm.begin();
@@ -1133,7 +1134,7 @@ void displaydebug(){
   display.print(ADC_val2,2);display.print(",");
   display.println(ADC_val3,2);display.println("");
   display.print("Pressure: ");display.print(pressure_calc(ADC_val0),2);display.println(" bar");
-  display.print("Flow: ");display.print(flow_counter);display.print(" ");display.print(analogRead(48),2);
+  display.print("Flow: ");display.print(flow_counter);
   display.setCursor(5, 20);
 
 }
@@ -1183,6 +1184,7 @@ void read_sensors(){
 }
 void flowsensing(){
   flow_counter++;
+  serial_debug();
 }
 void PCA9685_output(){
   //0:SSR1 1:SSR2 2:DIMMER
