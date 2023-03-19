@@ -175,9 +175,7 @@ void Core1code(void* pvParameters) {
     }
   }
 }
-void loop() {
-  // put nothing
-}
+void loop() {}
 //---------------------------------------------------------------------------------------------//
 void pressmid() {
   if (millis() - presstime > 350) {
@@ -784,7 +782,6 @@ void PCA9685_output(double Temp_output, double Pressure_output){ //0:SSR1 1:SSR2
   /*SSR1-Temp*/ /*CycleTime: TempOutput_cycle(5sec)*/
   Controller_output1 = Temp_output;
   Temp_output = constrain(Temp_output,0,1);
-  Controller_output2 = double(millis() % TempOutput_cycle)/double(TempOutput_cycle);
   if(double(millis() % TempOutput_cycle)/double(TempOutput_cycle) < Temp_output){
     pwm.setPWM(0, 4096, 0);
     SSR1_state = true;
