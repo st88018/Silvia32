@@ -16,9 +16,14 @@
 //Adafruit_ADS1115 ads;
 Adafruit_ADS1015 ads;
 float ADC_val0,ADC_val1,ADC_val2,ADC_val3;
+bool ads_init;
 // "ADC Range: +/- 6.144V (1 bit = 3mV/ADS1015, 0.1875mV/ADS1115)"
 
+//PCA9685 PWMoutput
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x55);
+long TempOutput_cycle = 5000; // millis
+long TempOutput_cycletimer;
+bool SSR1_state, SSR2_state;
 
 // OLED-screen
 #define SCREEN_WIDTH 128
@@ -28,6 +33,7 @@ Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, 
 
 //Thermocouple
 MAX6675 thermocouple(10, 11, 12);
+float thermocoupletimer;
 
 //Flow sensor
 #define FLOW_SENSOR_PIN 45
@@ -77,8 +83,10 @@ float brewpercent = 0; //something from 0~1
 int cleancount = 0;
 //Controllers
 double Temp_Integral,Temp_last_error,Pressure_Integral,Pressure_last_error;
+float Temp_controller_timer,Pressure_controller_timer;
+double Controller_output1,Controller_output2;
 
-float Kp_temp = 10;
+float Kp_temp = 20;
 float Ki_temp = 0;
 float Kd_temp = 0;
 float Kp_pressure = 10;
@@ -106,7 +114,7 @@ void setup() {
 
   /*collect eeprom data*/
   EEPROM.begin(128);
-  // saveParameters();
+  saveParameters();
   targetTemp = EEPROM.read(tempAddr);
   targetWeight = EEPROM.read(weightAddr);
   targetpressure = EEPROM.read(pressureAddr);
@@ -117,7 +125,7 @@ void setup() {
   Kp_pressure = EEPROM.read(Kp_pressureAddr);
   Ki_pressure = EEPROM.read(Ki_pressureAddr);
   Kd_pressure = EEPROM.read(Kd_pressureAddr);
-  Serial.print("EEPROM updated");
+  Serial.println("EEPROM updated");
 
   /*Initialize manual input*/
   attachInterrupt(digitalPinToInterrupt(ROTARY_ENCODER_BUTTON_PIN), pressmid, FALLING);
@@ -127,28 +135,33 @@ void setup() {
   rotaryEncoder.disableAcceleration();
 
   /*Initailize Sensors*/
+  attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR_PIN), flowsensing, CHANGE);
   if (!ads.begin()) {
     Serial.println("Failed to initialize ADS.");
-    while (1);
-  }
-  attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR_PIN), flowsensing, CHANGE);
+  }else{ads_init = true;}
+
 
   /*Initailize SSRoutput*/
   pwm.begin();
   pwm.setPWMFreq(1000);
+  pwm.setPWM(0, 0, 4096);
+  pwm.setPWM(1, 0, 4096);
+  pwm.setPWM(2, 0, 4096);
   
   /*Initialize dual core*/
   xTaskCreatePinnedToCore(Core0code, "Core0", 10000, NULL, 1, &Core0, 0);
   delay(500);
   xTaskCreatePinnedToCore(Core1code, "Core1", 10000, NULL, 1, &Core1, 1);
   delay(500);
+  code0timer = millis();
+  code1timer = millis();
 }
 void Core0code(void* pvParameters) {
   for (;;) {
-    // serial_debug();
-    delay(500);
+    delay(50);
+    serial_debug(); 
     read_sensors();
-    PCA9685_output();
+    PCA9685_output(Temp_controller(),0);
   }
 }
 void Core1code(void* pvParameters) {
@@ -822,7 +835,9 @@ void serial_debug() {
   Serial.println(currentTemp);
   Serial.print(presseddown);
   Serial.print(" cursurPosSelected:");
-  Serial.println(cursurPosSelected);
+  Serial.print(cursurPosSelected);
+  Serial.print(" millis:");
+  Serial.println(millis());
 }
 void displayModeColumn(){
   int BrewPos[2] = {8,56};
@@ -1128,15 +1143,18 @@ void displaydebug(){
   display.setTextSize(1);
   display.setTextColor(SH110X_WHITE);
   display.setCursor(0, 0);
-  display.println("ADC: ");
-  display.print(ADC_val0,2);display.print(",");
-  display.print(ADC_val1,2);display.print(",");
-  display.print(ADC_val2,2);display.print(",");
-  display.println(ADC_val3,2);display.println("");
+  display.print("ADC:");
+  display.print(ADC_val0,1);display.print(",");
+  display.print(ADC_val1,1);display.print(",");
+  display.print(ADC_val2,1);display.print(",");
+  display.println(ADC_val3,1);
+  display.print("Temp: ");display.print(currentTemp,2);display.print(" (");display.print(targetTemp);display.println(")");
+  display.print("Timer: ");display.println(Controller_output2,2);
+  display.print("Controller: ");display.println(Controller_output1,2);
   display.print("Pressure: ");display.print(pressure_calc(ADC_val0),2);display.println(" bar");
   display.print("Flow: ");display.print(flow_counter);
-  display.setCursor(5, 20);
-
+  display.setCursor(2, 55);  display.print("SSR1:"); display.print(SSR1_state);display.print(" SSR2:");display.print(SSR2_state);
+  display.setCursor(90, 55);  display.print(millis());
 }
 void blinkcontroller(){
   if (blinkcounter<5) {
@@ -1159,13 +1177,15 @@ void saveParameters(){
   EEPROM.write(Kd_pressureAddr, Kd_pressure);
   EEPROM.commit();
 }
-double Temp_controller(double targetTemp, double currentTemp,double dT){
+double Temp_controller(){
   double error = targetTemp-currentTemp;
+  double dT = micros()-Temp_controller_timer;
   Temp_Integral += error*dT;
   Temp_Integral = constrain(Temp_Integral, -1,1);
   double Tempderivative = (error-Temp_last_error)/(dT+1e-10);
   Temp_last_error = error;
-  double output = error*Kp_temp+Temp_Integral*Ki_temp+Tempderivative*Kd_temp;
+  double output = (error*Kp_temp+Temp_Integral*Ki_temp+Tempderivative*Kd_temp)*0.001;
+  Temp_controller_timer = micros();
   return(output);
 }
 double Pressure_controller(double targetPressure, double currentPressure,double dT){
@@ -1178,16 +1198,34 @@ double Pressure_controller(double targetPressure, double currentPressure,double 
   return(output);
 }
 void read_sensors(){
-  currentTemp = thermocouple.readCelsius();
-  ADS1115_input();
-  PCA9685_output();
+  if (millis() - thermocoupletimer > 500) {
+    currentTemp = thermocouple.readCelsius();
+    thermocoupletimer = millis();
+  }
+  if(ads_init){
+    ADS1115_input();
+  }
 }
 void flowsensing(){
   flow_counter++;
   serial_debug();
 }
-void PCA9685_output(){
-  //0:SSR1 1:SSR2 2:DIMMER
+void PCA9685_output(double Temp_output, double Pressure_output){ //0:SSR1 1:SSR2 2:DIMMER
+  /*SSR1-Temp*/ /*CycleTime: TempOutput_cycle(5sec)*/
+  Controller_output1 = Temp_output;
+  Temp_output = constrain(Temp_output,0,1);
+  Controller_output2 = double(millis() % TempOutput_cycle)/double(TempOutput_cycle);
+  if(double(millis() % TempOutput_cycle)/double(TempOutput_cycle) < Temp_output){
+    pwm.setPWM(0, 4096, 0);
+    SSR1_state = true;
+  }else{
+    pwm.setPWM(0, 0, 4096);
+    SSR1_state = false;
+  }
+  /*SSR2-Solenoid*/
+
+  /*Dimmer-Pump*/  
+
   
 }
 void ADS1115_input(){
