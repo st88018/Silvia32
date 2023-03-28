@@ -158,7 +158,7 @@ void setup() {
 }
 void Core0code(void* pvParameters) {
   for (;;) {
-    delay(50);
+    delay(1);
     serial_debug(); 
     read_sensors();
     PCA9685_output(Temp_controller(),0);
@@ -181,7 +181,7 @@ void pressmid() {
   if (millis() - presstime > 350) {
     pressedmid1 = true;
     pressmidtime = millis();
-    serial_debug();
+    // serial_debug();
   }
 }
 void longpresschecker(){
