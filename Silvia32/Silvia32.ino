@@ -21,7 +21,7 @@ bool ads_init;
 
 //PCA9685 PWMoutput
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x55);
-long TempOutput_cycle = 5000; // millis
+long TempOutput_cycle = 2000; // millis
 long TempOutput_cycletimer;
 bool SSR1_state, SSR2_state;
 
@@ -73,7 +73,7 @@ float currentWeight;
 float currentPressure;
 
 // Mode management
-int mode = 5;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
+int mode = 0;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
 int cursurPos = 0;
 bool cursurPosSelected = false;
 
@@ -86,7 +86,7 @@ double Temp_Integral,Temp_last_error,Pressure_Integral,Pressure_last_error;
 float Temp_controller_timer,Pressure_controller_timer;
 double Controller_output1,Controller_output2;
 
-float Kp_temp = 20;
+float Kp_temp = 30;
 float Ki_temp = 0;
 float Kd_temp = 0;
 float Kp_pressure = 10;
@@ -161,7 +161,7 @@ void Core0code(void* pvParameters) {
     delay(1);
     serial_debug(); 
     read_sensors();
-    PCA9685_output(Temp_controller(),0);
+    PCA9685_output(Temp_controller());
   }
 }
 void Core1code(void* pvParameters) {
@@ -258,7 +258,7 @@ void oled_initialize() {
 }
 void oled_display() {
   display.clearDisplay();
-  if (mode == 0 && millis() > 4000) {
+  if (mode == 0) {
     display.setTextSize(2);
     display.setTextColor(SH110X_WHITE);
     display.setCursor(25, 10);
@@ -273,7 +273,8 @@ void oled_display() {
     display.setCursor(90, 50);
     display.print(currentTemp);
     display.display();
-    if (currentTemp > 80) mode = 1;
+    if (currentTemp > 60) mode = 1;
+    if (millis() > 10000) mode = 1;
   }
   if (mode == 1) {
     displayTemp();
@@ -752,7 +753,6 @@ void displaydebug(){
   display.print(ADC_val2,1);display.print(",");
   display.println(ADC_val3,1);
   display.print("Temp: ");display.print(currentTemp,2);display.print(" (");display.print(targetTemp);display.println(")");
-  display.print("Timer: ");display.println(Controller_output2,2);
   display.print("Controller: ");display.println(Controller_output1,2);
   display.print("Pressure: ");display.print(pressure_calc(ADC_val0),2);display.println(" bar");
   display.print("Flow: ");display.print(flow_counter);
@@ -807,13 +807,14 @@ void read_sensors(){
   }
   if(ads_init){
     ADS1115_input();
+    currentPressure = pressure_calc(ADC_val0);
   }
 }
 void flowsensing(){
   flow_counter++;
-  serial_debug();
+  // serial_debug();
 }
-void PCA9685_output(double Temp_output, double Pressure_output){ //0:SSR1 1:SSR2 2:DIMMER
+void PCA9685_output(double Temp_output){ //0:SSR1 1:SSR2 2:DIMMER
   /*SSR1-Temp*/ /*CycleTime: TempOutput_cycle(5sec)*/
   Controller_output1 = Temp_output;
   Temp_output = constrain(Temp_output,0,1);
@@ -828,7 +829,6 @@ void PCA9685_output(double Temp_output, double Pressure_output){ //0:SSR1 1:SSR2
 
   /*Dimmer-Pump*/  
 
-  
 }
 void ADS1115_input(){
   ADC_val0 = ads.computeVolts(ads.readADC_SingleEnded(0));
