@@ -50,6 +50,13 @@ void IRAM_ATTR readEncoderISR(){
 	rotaryEncoder.readEncoder_ISR();
 }
 
+//External Input
+bool BrewButton = false;
+bool WaterButton = false;
+bool SteamButton = false;
+bool Pumpstate = false;
+bool Solenoidstate = false;
+
 // EEPROM stored data
 int weightAddr = 0;
 int tempAddr = 10;
@@ -73,7 +80,7 @@ float currentWeight;
 float currentPressure;
 
 // Mode management
-int mode = 0;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
+int mode = 1;  // Mode 0: Heating, 1: Brew, 2: Brewing, 3: Clean, 4: Setting;
 int cursurPos = 0;
 bool cursurPosSelected = false;
 
@@ -143,7 +150,7 @@ void setup() {
 
   /*Initailize SSRoutput*/
   pwm.begin();
-  pwm.setPWMFreq(1000);
+  pwm.setPWMFreq(50);
   pwm.setPWM(0, 0, 4096);
   pwm.setPWM(1, 0, 4096);
   pwm.setPWM(2, 0, 4096);
@@ -159,7 +166,7 @@ void setup() {
 void Core0code(void* pvParameters) {
   for (;;) {
     delay(1);
-    serial_debug(); 
+    // serial_debug(); 
     read_sensors();
     PCA9685_output(Temp_controller());
   }
@@ -347,8 +354,6 @@ void userinterface() {
         cursurPos += readandclearEncoder();
         cursurPos = constrain(cursurPos, 1,3);
       }
-      Serial.print("cursurPos");Serial.println(cursurPos);
-      Serial.print("cursurPosSelected");Serial.println(cursurPosSelected);
       presstime = millis();
     }
     if (millis() - presstime > 10000){ //stop selecting while not using
@@ -395,12 +400,12 @@ void userinterface() {
     }
     if (rotaryEncoder.encoderChanged()){
       if(cursurPosSelected){
-        if(cursurPos == 4){Kp_temp += readandclearEncoder()*0.1; }
-        if(cursurPos == 5){Ki_temp += readandclearEncoder()*0.1; }
-        if(cursurPos == 6){Kd_temp += readandclearEncoder()*0.1; }
-        if(cursurPos == 8){Kp_pressure += readandclearEncoder()*0.1; }
-        if(cursurPos == 9){Ki_pressure += readandclearEncoder()*0.1; }
-        if(cursurPos == 10){Kd_pressure += readandclearEncoder()*0.1; }
+        if(cursurPos == 4){Kp_temp += readandclearEncoder()*1; }
+        if(cursurPos == 5){Ki_temp += readandclearEncoder()*1; }
+        if(cursurPos == 6){Kd_temp += readandclearEncoder()*1; }
+        if(cursurPos == 8){Kp_pressure += readandclearEncoder()*1; }
+        if(cursurPos == 9){Ki_pressure += readandclearEncoder()*1; }
+        if(cursurPos == 10){Kd_pressure += readandclearEncoder()*1; }
       }else{
         if(cursurPos < 4){ //Main menu
           cursurPos += readandclearEncoder();
@@ -423,8 +428,6 @@ void userinterface() {
           cursurPos = constrain(cursurPos,14,15);
         }
       }
-      Serial.print("cursurPos: ");Serial.println(cursurPos);
-      Serial.print("cursurPosSelected: ");Serial.println(cursurPosSelected);
     }
   }
 }
@@ -655,7 +658,7 @@ void displaySettings(){
         display.setTextColor(SH110X_BLACK, SH110X_WHITE);
       }
     }
-    display.print(Kp_temp,1);
+    display.print(Kp_temp);
     display.setCursor(60, 30);
     display.setTextColor(SH110X_WHITE);
     if (cursurPos == 5){
@@ -664,7 +667,7 @@ void displaySettings(){
         display.setTextColor(SH110X_BLACK, SH110X_WHITE);
       }
     }
-    display.print(Ki_temp,1);
+    display.print(Ki_temp);
     display.setCursor(100, 30);
     display.setTextColor(SH110X_WHITE);
     if (cursurPos == 6){
@@ -673,7 +676,7 @@ void displaySettings(){
         display.setTextColor(SH110X_BLACK, SH110X_WHITE);
       }
     }
-    display.print(Kd_temp,1);
+    display.print(Kd_temp);
     display.setCursor(102, 45);
     display.setTextColor(SH110X_WHITE);
     if (cursurPos == 7) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
@@ -700,7 +703,7 @@ void displaySettings(){
         display.setTextColor(SH110X_BLACK, SH110X_WHITE);
       }
     }
-    display.print(Kp_temp,1);
+    display.print(Kp_pressure);
     display.setCursor(60, 30);
     display.setTextColor(SH110X_WHITE);
     if (cursurPos == 9){
@@ -709,7 +712,7 @@ void displaySettings(){
         display.setTextColor(SH110X_BLACK, SH110X_WHITE);
       }
     }
-    display.print(Ki_temp,1);
+    display.print(Ki_pressure);
     display.setCursor(100, 30);
     display.setTextColor(SH110X_WHITE);
     if (cursurPos == 10){
@@ -718,7 +721,7 @@ void displaySettings(){
         display.setTextColor(SH110X_BLACK, SH110X_WHITE);
       }
     }
-    display.print(Kd_temp,1);
+    display.print(Kd_pressure);
     display.setCursor(102, 45);
     display.setTextColor(SH110X_WHITE);
     if (cursurPos == 11) display.setTextColor(SH110X_BLACK, SH110X_WHITE);
@@ -835,6 +838,21 @@ void ADS1115_input(){
   ADC_val1 = ads.computeVolts(ads.readADC_SingleEnded(1));
   ADC_val2 = ads.computeVolts(ads.readADC_SingleEnded(2));
   ADC_val3 = ads.computeVolts(ads.readADC_SingleEnded(3));
+  if(ADC_val1 > 4){ 
+    BrewButton = true;
+  }else{
+    BrewButton = false;
+  }
+  if(ADC_val2 > 4){ 
+    WaterButton = true;
+  }else{
+    WaterButton = false;
+  }
+  if(ADC_val3 > 4){ 
+    SteamButton = true;
+  }else{
+    SteamButton = false;
+  }
 }
 float pressure_calc(float ADC_reading){ //0.52~3.26 0~12Bar
   float output = (ADC_reading-0.52)*3.9216;
